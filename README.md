@@ -1,9 +1,10 @@
-# pymodel: Unified hfmodel and zmodel Driver
+# pymodel: Unified Statistical Backend Driver
 
-pymodel is a standalone, unified CLI for statistical workflows using two backends:
+pymodel is a standalone, unified CLI for statistical workflows using three backends:
 
 - hfmodel (pyhf-based)
 - zmodel (zfit-based)
+- roomodel (ROOT RooFit-based)
 
 It supports a common build/load/analyze workflow, shared card parsing utilities, and backend-specific model execution.
 
@@ -28,9 +29,11 @@ It supports a common build/load/analyze workflow, shared card parsing utilities,
 - Backend adapters:
 	- python/backends/hfmodel/implementation.py
 	- python/backends/zmodel/implementation.py
+	- python/backends/roomodel/implementation.py
 - Backend implementations:
 	- python/hfmodel/
 	- python/zmodel/
+	- python/roomodel/
 
 ## Installation
 
@@ -59,6 +62,7 @@ Use the unified CLI:
 python3 python/pymodel --help
 python3 python/pymodel hfmodel --help
 python3 python/pymodel zmodel --help
+python3 python/pymodel roomodel --help
 ~~~
 
 Build a model from a text card:
@@ -66,6 +70,7 @@ Build a model from a text card:
 ~~~bash
 python3 python/pymodel hfmodel build examples/hfmodel/simple_shapes_card.txt
 python3 python/pymodel zmodel build examples/zmodel/simple_shapes_card.txt
+python3 python/pymodel roomodel build examples/roomodel/simple_shapes_card.txt
 ~~~
 
 Load and summarize a saved model:
@@ -73,6 +78,7 @@ Load and summarize a saved model:
 ~~~bash
 python3 python/pymodel hfmodel load model.json
 python3 python/pymodel zmodel load model.pkl
+python3 python/pymodel roomodel load model.root
 ~~~
 
 Run analysis:
@@ -80,6 +86,7 @@ Run analysis:
 ~~~bash
 python3 python/pymodel hfmodel analyze --model-file model.json
 python3 python/pymodel zmodel analyze --model-file model.pkl
+python3 python/pymodel roomodel analyze --model-file model.root
 ~~~
 
 ## Backend Output Formats
@@ -90,6 +97,9 @@ python3 python/pymodel zmodel analyze --model-file model.pkl
 - zmodel:
 	- model bundle default: model.pkl
 	- analysis snapshot default: analysis_output.pkl
+- roomodel:
+	- model bundle default: model.root
+	- analysis snapshot default: analysis_output_roomodel.json
 
 Both backends also produce an ensemble evaluation report JSON (derived from output path by default, overridable with --report-file).
 
@@ -102,6 +112,7 @@ Shared options include:
 - --cls ALPHA
 - --cls-scan-points N
 - --feldman-cousins ALPHA
+- --limit-poi-min X
 - --checkpoint-freq N
 - --output
 
@@ -116,6 +127,12 @@ Backend-specific examples:
 	- --profile-scan
 	- --poi-name
 	- --output-pkl (compatibility alias for --output)
+- roomodel:
+	- --fit-mode {auto,binned,unbinned}
+	- --set-parameters NAME=VALUE,...
+	- --freeze-parameters NAME,...
+	- --set-parameter-ranges NAME=MIN:MAX,...
+	- --plot (includes per-dataset plots, delta-NLL, CLs band, and Feldman-Cousins construction when requested)
 
 ## Plotting Existing Snapshots
 
@@ -124,6 +141,7 @@ Plot helper scripts are backend-specific wrappers:
 ~~~bash
 python3 python/hfmodel/plot_analysis.py analysis_output.json --plot-dir plots_hf
 python3 python/zmodel/plot_analysis.py analysis_output.pkl --plot-dir plots_z
+python3 python/pymodel roomodel analyze --model-file model.root --plot --ntoys-plot 1 --output analysis_output_roomodel.json
 ~~~
 
 ## Card Format Conversion
@@ -177,3 +195,4 @@ python3 tests/regression_examples_smoke.py
 ## Notes
 
 - Relative paths in cards are recommended for portability.
+- `roomodel` supports direct ROOT/RooFit workflows without converting to pyhf/zfit payloads.

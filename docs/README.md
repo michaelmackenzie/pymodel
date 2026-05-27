@@ -8,6 +8,7 @@ This directory contains detailed documentation for the unified `pymodel` workflo
 - [CLI Reference](cli-reference.md)
 - [hfmodel Backend Guide](backend-hfmodel.md)
 - [zmodel Backend Guide](backend-zmodel.md)
+- [roomodel Backend Guide](backend-roomodel.md)
 - [Cards and Conversion Workflows](cards-and-conversion.md)
 - [Architecture and Code Map](architecture.md)
 - [Testing and Regression](testing-and-regression.md)
@@ -23,11 +24,13 @@ This directory contains detailed documentation for the unified `pymodel` workflo
 - Shared backend infrastructure: [python/backends](../python/backends)
 - hfmodel implementation: [python/hfmodel](../python/hfmodel)
 - zmodel implementation: [python/zmodel](../python/zmodel)
+- roomodel implementation: [python/roomodel](../python/roomodel)
 
 ## Example Data and Cards
 
 - hfmodel examples: [examples/hfmodel](../examples/hfmodel)
 - zmodel examples: [examples/zmodel](../examples/zmodel)
+- roomodel examples: [examples/roomodel](../examples/roomodel)
 
 ## Suggested Read Order
 
@@ -36,6 +39,7 @@ This directory contains detailed documentation for the unified `pymodel` workflo
 3. Backend-specific guide:
    - [hfmodel Backend Guide](backend-hfmodel.md)
    - [zmodel Backend Guide](backend-zmodel.md)
+   - [roomodel Backend Guide](backend-roomodel.md)
 4. [Cards and Conversion Workflows](cards-and-conversion.md)
 5. [Testing and Regression](testing-and-regression.md)
 6. [Architecture and Code Map](architecture.md)

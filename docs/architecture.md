@@ -7,7 +7,7 @@ pymodel uses a shared CLI core with backend adapters.
 1. CLI parses `<backend> <command> ...`
 2. Backend adapter registers backend-specific arguments
 3. Core dispatches to backend methods (`build_model`, `load_summary`, `run_analysis`)
-4. Backend implementation calls concrete modules in `python/hfmodel` or `python/zmodel`
+4. Backend implementation calls concrete modules in `python/hfmodel`, `python/zmodel`, or `python/roomodel`
 
 ## Main Modules
 
@@ -20,6 +20,7 @@ pymodel uses a shared CLI core with backend adapters.
 - Backend adapters:
   - [python/backends/hfmodel/implementation.py](../python/backends/hfmodel/implementation.py)
   - [python/backends/zmodel/implementation.py](../python/backends/zmodel/implementation.py)
+  - [python/backends/roomodel/implementation.py](../python/backends/roomodel/implementation.py)
 
 ## Shared Utility Layers
 
@@ -37,7 +38,8 @@ pymodel uses a shared CLI core with backend adapters.
 
 - hfmodel code: [python/hfmodel](../python/hfmodel)
 - zmodel code: [python/zmodel](../python/zmodel)
+- roomodel code: [python/roomodel](../python/roomodel)
 
 ## Notes on Standalone Behavior
 
-Entry scripts under `python/hfmodel` and `python/zmodel` include path bootstrap logic so they can be invoked directly during development and conversion workflows.
+Entry scripts under backend directories include path bootstrap logic so they can be invoked directly during development and conversion workflows.

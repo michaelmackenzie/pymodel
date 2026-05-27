@@ -21,7 +21,7 @@ python3 tests/regression_examples_smoke.py
 ## CLI surface regression
 
 - Top-level backend choices in help text
-- Backend-specific analyze flags for both backends
+- Backend-specific analyze flags for all backends
 
 ## Example smoke regression
 
@@ -34,6 +34,7 @@ python3 tests/regression_examples_smoke.py
 
 - hfmodel example set: [examples/hfmodel](../examples/hfmodel)
 - zmodel example set: [examples/zmodel](../examples/zmodel)
+- roomodel example set: [examples/roomodel](../examples/roomodel)
 
 ## Recommended Update Practice
 

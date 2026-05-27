@@ -8,7 +8,7 @@ python3 python/pymodel <backend> <command> [options]
 
 Where:
 
-- `<backend>` is `hfmodel` or `zmodel`
+- `<backend>` is `hfmodel`, `zmodel`, or `roomodel`
 - `<command>` is `build`, `load`, or `analyze`
 
 ## Backend and Command Routing
@@ -28,6 +28,7 @@ Create model bundle from card:
 ```bash
 python3 python/pymodel hfmodel build <card.txt> [output.json]
 python3 python/pymodel zmodel build <card.txt> [output.pkl]
+python3 python/pymodel roomodel build <card.txt> [output.root]
 ```
 
 ## load
@@ -37,6 +38,7 @@ Inspect saved model bundle:
 ```bash
 python3 python/pymodel hfmodel load <model.json> [-v|-vv]
 python3 python/pymodel zmodel load <model.pkl> [-v|-vv]
+python3 python/pymodel roomodel load <model.root> [-v|-vv]
 ```
 
 ## analyze
@@ -46,6 +48,7 @@ Run fit/scan/toy workflows:
 ```bash
 python3 python/pymodel hfmodel analyze --model-file model.json --toys 10 --cls 0.05
 python3 python/pymodel zmodel analyze --model-file model.pkl --toys 10 --cls 0.05
+python3 python/pymodel roomodel analyze --model-file model.root --toys 10 --cls 0.05
 ```
 
 ## Shared Analyze Options
@@ -61,8 +64,11 @@ Commonly used flags:
 - `--report-file`
 - `--cls`
 - `--cls-scan-points`
+- `--limit-poi-min`
 - `--feldman-cousins`
 - `--checkpoint-freq`
+
+`--limit-poi-min` defaults to `0.0`, so CLs and Feldman-Cousins scans are restricted to non-negative POI by default. Use a negative value to allow negative POI limits.
 
 ## hfmodel-Specific Analyze Flags
 
@@ -81,3 +87,13 @@ Defined by [python/backends/zmodel/implementation.py](../python/backends/zmodel/
 - `--poi-name`
 - `--promote-poi`
 - `--output-pkl` (compatibility alias for `--output`)
+
+## roomodel-Specific Analyze Flags
+
+Defined by [python/backends/roomodel/implementation.py](../python/backends/roomodel/implementation.py):
+
+- `--fit-mode {auto,binned,unbinned}`
+- `--set-parameters NAME=VALUE,...`
+- `--freeze-parameters NAME,...`
+- `--set-parameter-ranges NAME=MIN:MAX,...`
+- `--plot` (saves dataset plots and profile-scan artifacts including CLs/FC plots when available)

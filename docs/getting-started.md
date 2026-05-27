@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide shows the shortest path from environment setup to a working build/load/analyze cycle for both backends.
+This guide shows the shortest path from environment setup to a working build/load/analyze cycle for all backends.
 
 ## 1. Environment
 
@@ -19,6 +19,7 @@ From the repository root:
 python3 python/pymodel --help
 python3 python/pymodel hfmodel --help
 python3 python/pymodel zmodel --help
+python3 python/pymodel roomodel --help
 ```
 
 Relevant source:
@@ -61,9 +62,26 @@ Examples and generators:
 ```bash
 python3 python/hfmodel/plot_analysis.py analysis_output.json --plot-dir plots_hf
 python3 python/zmodel/plot_analysis.py analysis_output.pkl --plot-dir plots_z
+python3 python/pymodel roomodel analyze --model-file model.root --plot --ntoys-plot 1 --output analysis_output_roomodel.json
 ```
 
 Source:
 
 - [python/hfmodel/plot_analysis.py](../python/hfmodel/plot_analysis.py)
 - [python/zmodel/plot_analysis.py](../python/zmodel/plot_analysis.py)
+
+## 6. roomodel Quickstart
+
+Build, load, and analyze:
+
+```bash
+python3 python/pymodel roomodel build examples/roomodel/simple_shapes_card.txt
+python3 python/pymodel roomodel load model.root
+python3 python/pymodel roomodel analyze --model-file model.root --toys 1 --output analysis_output_roomodel.json
+```
+
+Examples and generators:
+
+- [examples/roomodel/simple_shapes_card.txt](../examples/roomodel/simple_shapes_card.txt)
+- [examples/roomodel/simple_shapes.py](../examples/roomodel/simple_shapes.py)
+- [examples/roomodel/simple_shapes_two_channel_card.txt](../examples/roomodel/simple_shapes_two_channel_card.txt)
