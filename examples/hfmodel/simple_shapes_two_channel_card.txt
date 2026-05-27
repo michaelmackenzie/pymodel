@@ -1,0 +1,21 @@
+# Two-channel shape model matching ConvAna/pyhf/examples/simple_shapes.py
+#
+# Step 1: generate the workspace JSON
+#   cd examples && python simple_shapes_two_channel.py
+#
+# Step 2: build model bundle from this card
+#   hfmodel build simple_shapes_two_channel_card.txt simple_shapes_two_channel_model.json
+
+shapes * * simple_shapes_two_channel_workspace.json
+shapes data_obs * simple_shapes_two_channel_workspace.json
+
+bin      SR_high_pt SR_high_pt SR_low_pt SR_low_pt
+process  signal     background signal    background
+process  -1         1          -1        1
+rate      -         -          -         -
+
+# Rate uncertainties from card
+lumi_correlated_rate lnN 1.02 1.05 1.02 1.05
+
+# Shape uncertainties are sourced from histosys in the JSON workspace
+signal_shape_syst shape 1 - 1 -

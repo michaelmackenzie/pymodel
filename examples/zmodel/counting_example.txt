@@ -1,0 +1,14 @@
+# Example of a cut-and-count analysis
+# Build the model from this text card:
+# zmodel build counting_example.txt
+
+observation demo 100
+
+bin           demo   demo
+process       sig    bkg
+process       -1      1
+rate          12     80
+
+lumi     lnN  1.05   1.05
+bkg_norm gs    -     1.10
+sig_norm gs   1.10    -

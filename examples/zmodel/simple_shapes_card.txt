@@ -1,0 +1,25 @@
+# Example model card using simple_shapes_example.pkl.
+# The signal PDF uses a floating offset (example_sig_mu_offset) on top of
+# the nominal signal mean. A Gaussian constraint keeps the offset near zero.
+#
+# Step 1: generate the shapes payload in the examples/ directory:
+#   cd examples && python simple_shapes.py
+# Step 2: build the model bundle from this card:
+#   zmodel build simple_shapes_card.txt model.pkl
+
+shapes * * simple_shapes.pkl
+shapes data_obs * simple_shapes.pkl
+
+bin demo demo
+process sig bkg
+process  -1  1
+rate     12 80
+
+# Systematic uncertainties
+lumi      lnN   1.05 1.05
+bkg_norm  gs     -   1.10
+res       shape  1    -
+slope     shape  -    1
+
+# Constrain the signal mean offset: sig_mu_offset ~ Gaussian(0, 0.2)
+sig_mu_offset  param  0.0  0.2

@@ -1,0 +1,25 @@
+# Two-category shape-based model card (simultaneous fit across catA and catB).
+#
+# Step 1: generate payloads in examples/
+#   cd examples && python two_category_shapes.py
+#
+# Step 2: build model bundle from this card
+#   zmodel build two_category_shapes_card.txt model_two_category.pkl
+
+shapes * catA simple_shapes_catA.pkl
+shapes * catB simple_shapes_catB.pkl
+shapes data_obs catA simple_shapes_catA.pkl
+shapes data_obs catB simple_shapes_catB.pkl
+
+bin      catA catA catB catB
+process  sig  bkg  sig  bkg
+process  -1    1   -1    1
+rate      -    -    -    -
+
+# Shared systematics across categories
+lumi      lnN   1.05 1.05 1.05 1.05
+bkg_norm  gs      -  1.10    -  1.10
+res       shape 1      -  1      -
+slope     shape -      1  -      1
+
+# Observed datasets are loaded from data_obs inside each category payload.

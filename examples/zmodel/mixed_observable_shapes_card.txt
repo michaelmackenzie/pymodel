@@ -1,0 +1,26 @@
+# Mixed-observable two-category shape model.
+# catA uses variable massA in [100, 110], catB uses energyB in [0, 200].
+#
+# Step 1: generate payloads
+#   cd examples && python mixed_observable_shapes.py
+#
+# Step 2: build model
+#   zmodel build mixed_observable_shapes_card.txt model_mixed_observable.pkl
+
+shapes * catA mixed_observable_shapes_catA.pkl
+shapes * catB mixed_observable_shapes_catB.pkl
+shapes data_obs catA mixed_observable_shapes_catA.pkl
+shapes data_obs catB mixed_observable_shapes_catB.pkl
+
+bin      catA catA catB catB
+process  sig  bkg  sig  bkg
+process  -1    1   -1    1
+rate      -    -    -    -
+
+# Shared systematics across both categories
+lumi      lnN   1.05 1.05 1.05 1.05
+bkg_norm  gs      -  1.10    -  1.10
+res       shape 1      -  1      -
+slope     shape -      1  -      1
+
+# Observed datasets are loaded from data_obs inside each category payload.

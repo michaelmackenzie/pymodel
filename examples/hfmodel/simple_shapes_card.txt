@@ -1,0 +1,19 @@
+# Example model card using simple_shapes.py.
+#
+# Step 1: generate the shapes payload in the examples/ directory:
+#   cd examples && python simple_shapes.py
+# Step 2: build the model bundle from this card:
+#   hfmodel build simple_shapes_card.txt model.json
+
+shapes * * simple_shapes_workspace.json
+shapes data_obs * simple_shapes_workspace.json
+
+bin     demo demo
+process  signal  background
+process   -1    1
+rate      12   80
+
+# Systematic uncertainties
+lumi      gs    1.05 1.05
+bkg_norm  lnN    -   1.10
+sig_norm  lnN   1.03  -
