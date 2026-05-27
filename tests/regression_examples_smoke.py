@@ -127,14 +127,56 @@ def _zmodel_smoke(repo, cli):
     _assert_keys(report, ["n_datasets", "runtime", "fit_quality", "poi_name"], "zmodel ensemble report")
 
 
+def _roomodel_smoke(repo, cli):
+    roo_examples = repo / "examples" / "roomodel"
+
+    _run([sys.executable, "simple_shapes.py"], cwd=roo_examples)
+
+    model_path = "examples/roomodel/simple_shapes_model_regtest.root"
+    output_snapshot = "examples/roomodel/analysis_simple_regtest.json"
+
+    _run(cli + ["roomodel", "build", "examples/roomodel/simple_shapes_card.txt", model_path], cwd=repo)
+
+    _run(
+        cli
+        + [
+            "roomodel",
+            "analyze",
+            "--model-file",
+            model_path,
+            "--toys",
+            "1",
+            "--output",
+            output_snapshot,
+        ],
+        cwd=repo,
+    )
+
+    snapshot = _load_json(repo / output_snapshot)
+    _assert_keys(
+        snapshot,
+        ["format", "model_file", "workspace_name", "model_name", "channels", "process_names", "summaries", "config"],
+        "roomodel analysis snapshot",
+    )
+
+    summaries = snapshot.get("summaries", [])
+    if len(summaries) != 1:
+        raise AssertionError("roomodel snapshot: expected one summary entry")
+
+    report_path = repo / "examples/roomodel/analysis_simple_regtest_ensemble_report.json"
+    report = _load_json(report_path)
+    _assert_keys(report, ["n_datasets", "runtime", "fit_quality", "poi_name"], "roomodel ensemble report")
+
+
 def main():
     repo = Path(__file__).resolve().parents[1]
     cli = [sys.executable, "python/pymodel"]
 
     _hfmodel_smoke(repo, cli)
     _zmodel_smoke(repo, cli)
+    _roomodel_smoke(repo, cli)
 
-    print("Example smoke regression checks passed for hfmodel and zmodel backends.")
+    print("Example smoke regression checks passed for hfmodel, zmodel, and roomodel backends.")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+# Example of a cut-and-count analysis using the roomodel backend.
+# No shapes file needed; the counting model is built directly from rates.
+#
+# Build and analyze:
+#   python python/pymodel roomodel build examples/roomodel/counting_example.txt model.root
+#   python python/pymodel roomodel analyze --model-file model.root --toys 50
+
+bin           demo   demo
+process       sig    bkg
+process       -1      1
+rate          12     80

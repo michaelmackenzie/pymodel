@@ -24,7 +24,7 @@ def main():
     cli = [sys.executable, "python/pymodel"]
 
     top_help = _run(cli + ["--help"], cwd=repo)
-    _assert_in(top_help, "{hfmodel,zmodel}", "top-level help")
+    _assert_in(top_help, "{hfmodel,roomodel,zmodel}", "top-level help")
 
     hf_help = _run(cli + ["hfmodel", "analyze", "--help"], cwd=repo)
     for token in ["--backend", "--hessian-method", "--output", "--plot"]:
@@ -33,6 +33,10 @@ def main():
     z_help = _run(cli + ["zmodel", "analyze", "--help"], cwd=repo)
     for token in ["--fit-mode", "--graph-mode", "--output-pkl", "--profile-scan"]:
         _assert_in(z_help, token, "zmodel analyze help")
+
+    roo_help = _run(cli + ["roomodel", "analyze", "--help"], cwd=repo)
+    for token in ["--fit-mode", "--output", "--ntoys-plot"]:
+        _assert_in(roo_help, token, "roomodel analyze help")
 
     print("CLI surface regression checks passed.")
 
