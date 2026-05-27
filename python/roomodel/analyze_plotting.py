@@ -26,6 +26,75 @@ def _hist(values, title, xlabel, output_file, bins=30):
 
 
 def _plot_dataset(summary, plot_dir):
+    channel_payloads = summary.get("channel_plots") or []
+    if channel_payloads:
+        for item in channel_payloads:
+            payload = item.get("dataset_plot") or {}
+            mode = payload.get("mode")
+            if mode not in {"binned", "unbinned"}:
+                continue
+
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            dataset_id = int(summary.get("dataset_id", 0))
+            channel_name = str(item.get("channel") or "channel")
+            components = item.get("fit_components") or {}
+            comp_x = np.asarray(components.get("x", []), dtype=float)
+            comp_total = np.asarray(components.get("total", []), dtype=float)
+            comp_signal = np.asarray(components.get("signal", []), dtype=float) if components.get("signal") is not None else np.asarray([], dtype=float)
+            comp_background = np.asarray(components.get("background", []), dtype=float)
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+            if mode == "binned":
+                edges = np.asarray(payload.get("edges", []), dtype=float)
+                counts = np.asarray(payload.get("counts", []), dtype=float)
+                if len(edges) < 2 or len(counts) != len(edges) - 1:
+                    plt.close(fig)
+                    continue
+                centers = 0.5 * (edges[:-1] + edges[1:])
+                ax.errorbar(centers, counts, yerr=np.sqrt(np.clip(counts, 0.0, None)), fmt="o", color="black", label="Data")
+                ax.set_xlabel(payload.get("obs_name", "obs"))
+                ax.set_ylabel("Entries")
+            else:
+                values = np.asarray(payload.get("values", []), dtype=float)
+                values = values[np.isfinite(values)]
+                edges = np.asarray(payload.get("edges", []), dtype=float)
+                counts = np.asarray(payload.get("counts", []), dtype=float)
+
+                if edges.size >= 2 and counts.size == edges.size - 1:
+                    centers = 0.5 * (edges[:-1] + edges[1:])
+                    ax.errorbar(centers, counts, yerr=np.sqrt(np.clip(counts, 0.0, None)), fmt="o", color="black", label="Data")
+                elif values.size > 0:
+                    bins = max(10, min(80, int(np.sqrt(values.size) * 2)))
+                    counts, edges = np.histogram(values, bins=bins)
+                    centers = 0.5 * (edges[:-1] + edges[1:])
+                    ax.errorbar(centers, counts, yerr=np.sqrt(np.clip(counts, 0.0, None)), fmt="o", color="black", label="Data")
+                else:
+                    plt.close(fig)
+                    continue
+
+                ax.set_xlabel(payload.get("obs_name", "obs"))
+                ax.set_ylabel("Entries")
+
+            if comp_x.size > 0 and comp_background.size == comp_x.size:
+                ax.plot(comp_x, comp_background, color="#54A24B", linewidth=2.0, label="Background fit")
+            if comp_x.size > 0 and comp_signal.size == comp_x.size:
+                ax.plot(comp_x, comp_signal, color="#E45756", linewidth=2.0, label="Signal fit")
+            if comp_x.size > 0 and comp_total.size == comp_x.size:
+                ax.plot(comp_x, comp_total, color="#4C78A8", linewidth=2.2, linestyle="--", label="Total fit")
+
+            title = "Observed data" if summary.get("observed_fit") else f"Dataset {dataset_id}"
+            ax.set_title(f"{title} ({channel_name})")
+            ax.grid(alpha=0.25)
+            ax.legend(loc="best")
+            plt.tight_layout()
+            plt.savefig(os.path.join(plot_dir, f"dataset_{dataset_id:04d}_{channel_name}.png"), dpi=150)
+            plt.close(fig)
+        return
+
     payload = summary.get("dataset_plot", {})
     mode = payload.get("mode")
     if mode not in {"binned", "unbinned"}:
@@ -98,6 +167,12 @@ def _plot_delta_nll(summary, plot_dir):
     if x.size == 0 or y.size != x.size:
         return
 
+    mask = np.isfinite(x) & np.isfinite(y)
+    if not np.any(mask):
+        return
+    x = x[mask]
+    y = y[mask]
+
     import matplotlib
 
     matplotlib.use("Agg")
@@ -117,6 +192,91 @@ def _plot_delta_nll(summary, plot_dir):
     ax.legend(loc="best")
     plt.tight_layout()
     plt.savefig(os.path.join(plot_dir, f"delta_nll_{dataset_id:04d}.png"), dpi=150)
+    plt.close(fig)
+
+
+def _plot_cls_band(summary, plot_dir):
+    cls_curve = summary.get("cls_curve", {})
+    if not isinstance(cls_curve, dict):
+        return
+
+    x = np.asarray(cls_curve.get("pois", []), dtype=float)
+    y = np.asarray(cls_curve.get("observed", []), dtype=float)
+    if x.size == 0 or y.size != x.size:
+        return
+
+    mask = np.isfinite(x) & np.isfinite(y)
+    if not np.any(mask):
+        return
+    x = x[mask]
+    y = y[mask]
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    dataset_id = int(summary.get("dataset_id", 0))
+    alpha = float(summary.get("cls_alpha", 0.05))
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(x, y, color="#4C78A8", linewidth=2.0, label="Observed CLs")
+    ax.axhline(alpha, color="#E45756", linestyle="--", linewidth=1.4, label=f"alpha={alpha:g}")
+    ax.set_xlabel(summary.get("poi_name", "POI"))
+    ax.set_ylabel("CLs")
+    ax.set_ylim(bottom=0.0)
+    ax.set_title(f"CLs Scan (Dataset {dataset_id})")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    plt.tight_layout()
+    plt.savefig(os.path.join(plot_dir, f"dataset_{dataset_id:04d}_cls_band.png"), dpi=150)
+    plt.close(fig)
+
+
+def _plot_feldman_cousins_construction(summary, plot_dir):
+    fc = summary.get("feldman_cousins")
+    if not isinstance(fc, dict):
+        return
+    grid = fc.get("grid") or {}
+
+    x = np.asarray(grid.get("poi", []), dtype=float)
+    q_obs = np.asarray(grid.get("q_obs", []), dtype=float)
+    q_crit = np.asarray(grid.get("q_crit", []), dtype=float)
+    if x.size == 0 or q_obs.size != x.size or q_crit.size != x.size:
+        return
+
+    mask = np.isfinite(x) & np.isfinite(q_obs) & np.isfinite(q_crit)
+    if not np.any(mask):
+        return
+    x = x[mask]
+    q_obs = q_obs[mask]
+    q_crit = q_crit[mask]
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    dataset_id = int(summary.get("dataset_id", 0))
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(x, q_obs, color="#4C78A8", linewidth=2.0, label="q_obs")
+    ax.plot(x, q_crit, color="#E45756", linestyle="--", linewidth=1.4, label="q_crit")
+
+    interval = fc.get("fc_interval")
+    if isinstance(interval, (list, tuple)) and len(interval) == 2:
+        lo = float(interval[0])
+        hi = float(interval[1])
+        if np.isfinite(lo) and np.isfinite(hi) and hi >= lo:
+            ax.axvspan(lo, hi, color="#54A24B", alpha=0.2, label="Accepted interval")
+
+    ax.set_xlabel(fc.get("poi_name", summary.get("poi_name", "POI")))
+    ax.set_ylabel("Profile-likelihood q")
+    ax.set_title(f"Feldman-Cousins Construction (Dataset {dataset_id})")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    plt.tight_layout()
+    plt.savefig(os.path.join(plot_dir, f"dataset_{dataset_id:04d}_feldman_cousins.png"), dpi=150)
     plt.close(fig)
 
 
@@ -155,3 +315,5 @@ def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_pl
     for summary in summaries[:n_plot]:
         _plot_dataset(summary, plot_dir)
         _plot_delta_nll(summary, plot_dir)
+        _plot_cls_band(summary, plot_dir)
+        _plot_feldman_cousins_construction(summary, plot_dir)

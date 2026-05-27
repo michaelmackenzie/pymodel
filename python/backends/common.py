@@ -78,6 +78,12 @@ def add_shared_analysis_arguments(
         help="Adaptively refine the CLs scan range and granularity around the limit",
     )
     parser.add_argument(
+        "--limit-poi-min",
+        type=float,
+        default=0.0,
+        help="Lower bound for CLs/Feldman-Cousins POI limit scans (default: 0.0).",
+    )
+    parser.add_argument(
         "--binned-bins",
         type=int,
         default=40,

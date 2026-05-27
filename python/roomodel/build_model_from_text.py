@@ -157,12 +157,7 @@ def _channel_rate_split(card: CardSpec, channel: str, signal_processes: List[str
 def _build_counting_workspace(card: CardSpec):
     ROOT = _get_root()
     ws = ROOT.RooWorkspace("workspace")
-
-    channel_cat = ROOT.RooCategory("channel", "channel")
-    for channel in card.channels:
-        channel_cat.defineType(channel)
-
-    sim_pdf = ROOT.RooSimultaneous("simPdf", "simPdf", channel_cat)
+    channel_model_names = []
 
     observed_counts = {}
     signal_processes = [
@@ -173,47 +168,47 @@ def _build_counting_workspace(card: CardSpec):
     poi = _make_signal_strength_var(ws, signal_processes, mu_min=_physical_mu_min_from_card(card, signal_processes))
 
     for channel in card.channels:
-        obs = _make_obs_var(f"count_obs_{channel}", 0.0, 1.0)
+        # Counting observable is an event count; keep it in a wide non-negative range.
+        obs = _make_obs_var(f"count_obs_{channel}", 0.0, 1.0e6)
         getattr(ws, "import")(obs)
 
         sig_rate, bkg_rate = _channel_rate_split(card, channel, signal_processes)
         total_rate = sig_rate + bkg_rate
 
-        center = ROOT.RooConstVar(f"center_total__{channel}", f"center_total__{channel}", 0.5)
-        sigma = ROOT.RooConstVar(f"sigma_total__{channel}", f"sigma_total__{channel}", 0.15)
-        getattr(ws, "import")(center)
-        getattr(ws, "import")(sigma)
-        channel_pdf = ROOT.RooGaussian(f"pdf_total__{channel}", f"pdf_total__{channel}", obs, center, sigma)
-        getattr(ws, "import")(channel_pdf)
-
         if poi is not None:
-            sig_rate_const = ROOT.RooRealVar(f"sig_rate__{channel}", f"sig_rate__{channel}", float(sig_rate), -1.0e12, 1.0e12)
-            bkg_rate_const = ROOT.RooRealVar(f"bkg_rate__{channel}", f"bkg_rate__{channel}", float(bkg_rate), -1.0e12, 1.0e12)
-            sig_rate_const.setConstant(True)
-            bkg_rate_const.setConstant(True)
-            getattr(ws, "import")(sig_rate_const)
-            getattr(ws, "import")(bkg_rate_const)
-            yield_total = ROOT.RooFormulaVar(
+            sig_rate_const = ROOT.RooConstVar(f"sig_rate__{channel}", f"sig_rate__{channel}", float(sig_rate))
+            bkg_rate_const = ROOT.RooConstVar(f"bkg_rate__{channel}", f"bkg_rate__{channel}", float(bkg_rate))
+            expected = ROOT.RooFormulaVar(
                 f"yield_total__{channel}",
                 "@0*@1 + @2",
                 ROOT.RooArgList(poi, sig_rate_const, bkg_rate_const),
             )
-            getattr(ws, "import")(yield_total)
         else:
-            yield_total = ROOT.RooRealVar(f"yield_total__{channel}", f"yield_total__{channel}", total_rate, 0.0, 1.0e9)
-            getattr(ws, "import")(yield_total)
+            expected = ROOT.RooConstVar(f"yield_total__{channel}", f"yield_total__{channel}", float(total_rate))
 
-        channel_ext_pdf = ROOT.RooExtendPdf(
-            f"ext_pdf_total__{channel}", f"ext_pdf_total__{channel}",
-            channel_pdf, yield_total,
+        channel_pdf = ROOT.RooPoisson(
+            f"pdf_total__{channel}",
+            f"pdf_total__{channel}",
+            obs,
+            expected,
         )
-        getattr(ws, "import")(channel_ext_pdf, ROOT.RooFit.RecycleConflictNodes())
-
-        sim_pdf.addPdf(channel_ext_pdf, channel)
+        getattr(ws, "import")(channel_pdf, ROOT.RooFit.RecycleConflictNodes())
+        channel_model_names.append(f"pdf_total__{channel}")
 
         obs_val = float(card.observations.get(channel, card.observation_count or 0.0))
         observed_counts[channel] = obs_val
+        ws_obs = ws.var(f"count_obs_{channel}")
+        if ws_obs is not None and bool(ws_obs):
+            ws_obs.setVal(obs_val)
 
+    channel_models = ROOT.RooArgList()
+    for model_name in channel_model_names:
+        model_pdf = ws.pdf(model_name)
+        if model_pdf is None:
+            raise ValueError(f"Missing channel model '{model_name}' in counting workspace")
+        channel_models.add(model_pdf)
+
+    sim_pdf = ROOT.RooProdPdf("simPdf", "simPdf", channel_models)
     getattr(ws, "import")(sim_pdf, ROOT.RooFit.RecycleConflictNodes())
 
     return ws, "simPdf", None, observed_counts, signal_processes
@@ -239,10 +234,6 @@ def _extract_obs_from_pdf(pdf, workspace):
 def _build_shape_workspace(card: CardSpec, card_dir: str):
     ROOT = _get_root()
     ws = ROOT.RooWorkspace("workspace")
-
-    channel_cat = ROOT.RooCategory("channel", "channel")
-    for channel in card.channels:
-        channel_cat.defineType(channel)
 
     signal_processes = [
         process
@@ -305,20 +296,13 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
             except Exception:
                 pass
 
-    sim_pdf = ROOT.RooSimultaneous("simPdf", "simPdf", channel_cat)
+    channel_model_names = []
     for channel in card.channels:
         channel_info = by_channel[channel]
         if channel_info["min"] is None or channel_info["max"] is None or not channel_info["terms"]:
             raise ValueError(f"No terms for channel '{channel}'")
-
-        obs_name = str(channel_info["obs_name"])
-        ws_obs = ws.var(obs_name)
-        if ws_obs is None:
-            ws_obs = _make_obs_var(obs_name, channel_info["min"], channel_info["max"])
-            getattr(ws, "import")(ws_obs)
-
         ch_pdf_list = ROOT.RooArgList()
-        ch_yield_list = ROOT.RooArgList()
+        ch_yield_total_objs = []
 
         sig_rate_total = 0.0
         bkg_rate_total = 0.0
@@ -335,10 +319,21 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
                     f"Could not reload PDF '{src_pdf_name}' for process '{process}' in '{root_path}'"
                 )
 
-            getattr(ws, "import")(src_pdf, ROOT.RooFit.RecycleConflictNodes())
-            term_pdf = ws.pdf(src_pdf_name)
-            if term_pdf is None:
-                raise ValueError(f"Failed to import shape PDF '{src_pdf_name}'")
+            term_suffix = str(channel)
+            imported_pdf_name = f"{src_pdf_name}_{term_suffix}"
+            term_pdf = ws.pdf(imported_pdf_name)
+            if term_pdf is None or not bool(term_pdf):
+                getattr(
+                    ws,
+                    "import",
+                )(
+                    src_pdf,
+                    ROOT.RooFit.RenameAllNodes(term_suffix),
+                    ROOT.RooFit.RenameAllVariables(term_suffix),
+                )
+                term_pdf = ws.pdf(imported_pdf_name)
+            if term_pdf is None or not bool(term_pdf):
+                raise ValueError(f"Failed to import shape PDF '{src_pdf_name}' for channel '{channel}'")
 
             yield_name = f"yield_{process}__{channel}"
             if process in signal_set and poi is not None:
@@ -377,7 +372,7 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
                 raise ValueError(f"Failed to resolve yield object '{yield_name}'")
 
             ch_pdf_list.add(term_pdf)
-            ch_yield_list.add(term_yield_obj)
+            ch_yield_total_objs.append(term_yield_obj)
 
         sig_rate_const = ROOT.RooRealVar(f"sig_rate__{channel}", f"sig_rate__{channel}", sig_rate_total, -1.0e12, 1.0e12)
         bkg_rate_const = ROOT.RooRealVar(f"bkg_rate__{channel}", f"bkg_rate__{channel}", bkg_rate_total, -1.0e12, 1.0e12)
@@ -386,17 +381,52 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
         getattr(ws, "import")(sig_rate_const)
         getattr(ws, "import")(bkg_rate_const)
 
-        ch_pdf = ROOT.RooAddPdf(
+        if not ch_yield_total_objs:
+            raise ValueError(f"No yields resolved for channel '{channel}'")
+
+        total_yield_list = ROOT.RooArgList()
+        for y in ch_yield_total_objs:
+            total_yield_list.add(y)
+        total_yield = ROOT.RooAddition(
+            f"yield_total__{channel}",
+            f"yield_total__{channel}",
+            total_yield_list,
+        )
+
+        n_terms = int(ch_pdf_list.getSize())
+        coeff_list = ROOT.RooArgList()
+        for coeff in ch_yield_total_objs:
+            coeff_list.add(coeff)
+        ch_model_pdf = ROOT.RooAddPdf(
             f"pdf_total__{channel}",
             f"pdf_total__{channel}",
             ch_pdf_list,
-            ch_yield_list,
+            coeff_list,
+            False,
         )
-        getattr(ws, "import")(ch_pdf, ROOT.RooFit.RecycleConflictNodes())
+        getattr(ws, "import")(ch_model_pdf, ROOT.RooFit.RecycleConflictNodes())
+        channel_model_names.append(f"pdf_total__{channel}")
 
-        sim_pdf.addPdf(ch_pdf, channel)
-
-    getattr(ws, "import")(sim_pdf, ROOT.RooFit.RecycleConflictNodes())
+    if len(channel_model_names) == 1:
+        only_pdf = ws.pdf(channel_model_names[0])
+        if only_pdf is None:
+            raise ValueError(f"Missing channel model '{channel_model_names[0]}' in shape workspace")
+        sim_list = ROOT.RooArgList()
+        sim_list.add(only_pdf)
+        sim_pdf = ROOT.RooProdPdf("simPdf", "simPdf", sim_list)
+        getattr(ws, "import")(sim_pdf, ROOT.RooFit.RecycleConflictNodes())
+    else:
+        channel_cat = ROOT.RooCategory("channel", "channel")
+        for channel in card.channels:
+            channel_cat.defineType(channel)
+        sim_pdf = ROOT.RooSimultaneous("simPdf", "simPdf", channel_cat)
+        for channel in card.channels:
+            model_name = f"pdf_total__{channel}"
+            model_pdf = ws.pdf(model_name)
+            if model_pdf is None:
+                raise ValueError(f"Missing channel model '{model_name}' in shape workspace")
+            sim_pdf.addPdf(model_pdf, channel)
+        getattr(ws, "import")(sim_pdf, ROOT.RooFit.RecycleConflictNodes())
 
     return ws, "simPdf", None, observed_counts, signal_processes
 

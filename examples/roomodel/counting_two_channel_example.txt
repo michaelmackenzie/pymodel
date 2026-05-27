@@ -1,0 +1,10 @@
+# Two-channel cut-and-count example for roomodel.
+#
+# Build and analyze:
+#   python python/pymodel roomodel build examples/roomodel/counting_two_channel_example.txt model.root
+#   python python/pymodel roomodel analyze --model-file model.root --toys 50
+
+bin           barrel  barrel  endcap  endcap
+process       sig     bkg     sig     bkg
+process       -1       1      -1       1
+rate          12      80       6      200
