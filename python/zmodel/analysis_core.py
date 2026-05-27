@@ -5,7 +5,14 @@ import dill
 from scipy.optimize import minimize_scalar
 from multiprocessing import Pool
 
-from zmodel.analysis_overrides import find_parameter_by_name
+from backends.zfit_parameter_utils import (
+    all_params_list as _all_params,
+    capture_fit_model_parameter_values as _capture_fit_model_parameter_values,
+    capture_parameter_values as _capture_parameter_values,
+    channel_models as _channel_models,
+    find_parameter_by_name,
+    restore_parameter_values as _restore_parameter_values,
+)
 from zmodel.utilities import AsymptoticCalculator, POI
 
 
@@ -240,17 +247,6 @@ def _make_unbinned_toy_data_from_binned_model(fit_model, model, channel=None, bi
     return unbinned_data, values.astype(float), edges, toy_counts
 
 
-def _channel_models(fit_model):
-    return getattr(fit_model, "channel_models", {}) or {}
-
-
-def _all_models(fit_model):
-    channel_models = _channel_models(fit_model)
-    if channel_models:
-        return list(channel_models.values())
-    return [fit_model.model]
-
-
 def _resolve_process_key(process_map, process_name):
     if not process_map or process_name is None:
         return None
@@ -268,89 +264,6 @@ def _resolve_process_key(process_map, process_name):
             return base_name
 
     return None
-
-
-def _all_params(fit_model):
-    params = []
-    seen = set()
-
-    def _iter_child_params(param):
-        children = getattr(param, "params", None)
-        if children is None:
-            return
-        if isinstance(children, dict):
-            iterable = children.values()
-        else:
-            iterable = children
-        for child in iterable:
-            candidate = child
-            if isinstance(child, tuple) and len(child) >= 2:
-                candidate = child[1]
-            if hasattr(candidate, "value"):
-                yield candidate
-
-    def _collect(param):
-        ident = id(param)
-        if ident in seen:
-            return
-        seen.add(ident)
-        params.append(param)
-        for child in _iter_child_params(param):
-            _collect(child)
-
-    for model in _all_models(fit_model):
-        for kwargs in ({}, {"floating": None}, {"floating": None, "is_yield": None}):
-            try:
-                model_params = list(model.get_params(**kwargs))
-            except Exception:
-                continue
-            for param in model_params:
-                _collect(param)
-
-    for param in (getattr(fit_model, "yields", {}) or {}).values():
-        if hasattr(param, "value"):
-            _collect(param)
-
-    return params
-
-
-def _capture_fit_model_parameter_values(fit_model):
-    values = {}
-    for param in _all_params(fit_model):
-        if not hasattr(param, "set_value"):
-            continue
-        try:
-            values[param] = float(param.value())
-        except Exception:
-            # Some composed parameters are not directly settable/restorable.
-            continue
-    return values
-
-
-def _capture_parameter_values(model):
-    values = {}
-    for kwargs in ({}, {"floating": None}, {"floating": None, "is_yield": None}):
-        try:
-            params = list(model.get_params(**kwargs))
-        except Exception:
-            continue
-        for param in params:
-            if not hasattr(param, "set_value"):
-                continue
-            try:
-                values[param] = float(param.value())
-            except Exception:
-                continue
-    return values
-
-
-def _restore_parameter_values(saved_values):
-    for param, value in saved_values.items():
-        try:
-            param.set_value(value)
-        except Exception:
-            # Skip parameters that cannot be set directly (e.g. composed params).
-            continue
 
 
 def _find_signal_parameter(fit_model):

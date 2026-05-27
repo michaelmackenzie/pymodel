@@ -1,9 +1,29 @@
 import json
 import os
+import pathlib
+import sys
 import time
 
 import numpy as np
 import pyhf
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from backends.analysis_console import print_dataset_summary_header, print_limit_summary_lines
+from backends.analysis_common import load_analysis_model, normalize_output_path, resolve_dataset_mode
+from backends.analysis_reporting import (
+    add_fit_quality,
+    add_poi_distributions,
+    distribution_summary,
+    init_ensemble_report,
+    print_runtime_summary,
+    resolve_output_or_default,
+    save_and_print_ensemble_report,
+    save_and_print_snapshot,
+    maybe_plot_summary_artifacts,
+)
 
 from hfmodel.analysis_core import configure_runtime, run_analysis
 from hfmodel.analysis_overrides import apply_parameter_overrides
@@ -13,12 +33,13 @@ from hfmodel.model_io import load_fit_model
 
 
 def _load_analysis_model(model_file=None, input_card=None):
-    if model_file is not None:
-        return load_fit_model(os.path.abspath(model_file))
-
-    card_path = os.path.abspath(input_card)
-    card = parse_model_card(card_path)
-    return build_model_from_card(card, os.path.dirname(card_path))
+    return load_analysis_model(
+        model_file=model_file,
+        input_card=input_card,
+        load_fit_model_fn=load_fit_model,
+        parse_model_card_fn=parse_model_card,
+        build_model_from_card_fn=build_model_from_card,
+    )
 
 
 def _configure_pyhf_backend(backend_name):
@@ -37,116 +58,44 @@ def _configure_pyhf_backend(backend_name):
 
 
 def _print_dataset_summary(summary, is_observed_fit=False):
-    poi_label = summary.get("poi_name", "poi")
-    poi_fit = summary.get("poi_fit")
-    poi_unc = summary.get("poi_unc_hesse")
-    fit_text = f"{poi_fit:.4g}" if poi_fit is not None else "n/a"
-    unc_text = f"{poi_unc:.4g}" if poi_unc is not None else "n/a"
-    status_text = "valid" if summary.get("valid") else "invalid"
-
-    if summary.get("asimov_fit"):
-        label = "Asimov"
-    elif is_observed_fit or summary.get("observed_fit"):
-        label = "Observed"
-    else:
-        label = f"Toy {int(summary.get('dataset_id', 0)):3d}"
-
-    print(
-        f"{label}: {status_text:<7}, {poi_label}={fit_text:<10} +- {unc_text:<10}, "
-        f"time={summary.get('dataset_time_s', float('nan')):.4f}s"
+    print_dataset_summary_header(
+        summary,
+        is_observed_fit=is_observed_fit,
+        fit_precision=".4g",
+        unc_precision=".4g",
+        asimov_label="Asimov",
+        observed_label="Observed",
+    )
+    print_limit_summary_lines(
+        summary,
+        include_scan_details=False,
+        include_expected_error=False,
+        include_yield_upper=False,
+        feldman_status_prefix="Feldman-Cousins status",
+        expected_label="CLs expected",
+        expected_precision=".4g",
+        feldman_interval_precision=".4g",
     )
 
-    if "cls_observed" in summary and summary.get("cls_observed") is not None:
-        print(f"  CLs observed upper limit: {summary['cls_observed']:.4f}")
-    if "cls_expected_quantiles" in summary:
-        q = summary["cls_expected_quantiles"]
-        print(
-            "  CLs expected: "
-            f"2.5%={q.get('2.5%'):.4g}, 16%={q.get('16%'):.4g}, 50%={q.get('50%'):.4g}, "
-            f"84%={q.get('84%'):.4g}, 97.5%={q.get('97.5%'):.4g}"
-        )
-    if "cls_error" in summary:
-        print(f"  CLs failed: {summary['cls_error']}")
-    if isinstance(summary.get("feldman_cousins"), dict):
-        fc = summary["feldman_cousins"]
-        if fc.get("fc_interval") is not None:
-            print(f"  Feldman-Cousins interval: {[float(f'{x:.4g}') for x in fc.get('fc_interval')]}")
-        elif fc.get("fc_status"):
-            print(f"  Feldman-Cousins status: {fc.get('fc_status')}")
-
-
-
-def _distribution_summary(values):
-    arr = np.asarray(values, dtype=float)
-    arr = arr[np.isfinite(arr)]
-    if arr.size == 0:
-        return None
-
-    return {
-        "count": int(arr.size),
-        "mean": float(np.mean(arr)),
-        "std": float(np.std(arr)),
-        "median": float(np.median(arr)),
-        "min": float(np.min(arr)),
-        "max": float(np.max(arr)),
-        "p16": float(np.percentile(arr, 16)),
-        "p84": float(np.percentile(arr, 84)),
-    }
 
 
 def _build_ensemble_evaluation_report(summaries, total_time_s):
-    report = {
-        "n_datasets": int(len(summaries)),
-        "runtime": {
-            "total_time_s": float(total_time_s),
-            "average_time_s": float(total_time_s / len(summaries)) if summaries else None,
-        },
-    }
+    report = init_ensemble_report(summaries, total_time_s)
 
     if not summaries:
         return report
 
-    valid_flags = [bool(summary.get("valid", False)) for summary in summaries]
-    n_valid = int(sum(valid_flags))
-    report["fit_quality"] = {
-        "n_valid": n_valid,
-        "n_invalid": int(len(summaries) - n_valid),
-        "valid_fraction": float(n_valid / len(summaries)),
-    }
-
-    report["poi_name"] = summaries[0].get("poi_name", "poi")
-    report["poi_fit"] = _distribution_summary([summary.get("poi_fit") for summary in summaries])
-    report["poi_unc_hesse"] = _distribution_summary([summary.get("poi_unc_hesse") for summary in summaries])
-    report["poi_pull"] = _distribution_summary([summary.get("poi_pull") for summary in summaries])
+    add_fit_quality(report, summaries, include_invalid_fraction=False)
+    add_poi_distributions(report, summaries)
 
     cls_obs = [summary.get("cls_observed") for summary in summaries if summary.get("cls_observed") is not None]
     if cls_obs:
         report["cls"] = {
-            "observed_limit": _distribution_summary(cls_obs),
+            "observed_limit": distribution_summary(cls_obs),
             "n_failures": int(sum(1 for summary in summaries if "cls_error" in summary)),
         }
 
     return report
-
-
-def _save_ensemble_report(report, output, report_file=None):
-    if report_file:
-        output_path = os.path.abspath(report_file)
-    else:
-        base, _ = os.path.splitext(os.path.abspath(output))
-        output_path = f"{base}_ensemble_report.json"
-
-    with open(output_path, "w", encoding="utf-8") as handle:
-        json.dump(report, handle, indent=2, sort_keys=True)
-    return output_path
-
-
-def _snapshot_path(output_path):
-    abs_out = os.path.abspath(output_path)
-    if abs_out.lower().endswith(".json"):
-        return abs_out
-    base, _ = os.path.splitext(abs_out)
-    return f"{base}.json"
 
 
 def _save_analysis_snapshot(output_path, fit_model, summaries, args):
@@ -182,7 +131,7 @@ def _save_analysis_snapshot(output_path, fit_model, summaries, args):
         },
     }
 
-    final_path = _snapshot_path(output_path)
+    final_path = normalize_output_path(output_path, ".json")
     with open(final_path, "w", encoding="utf-8") as handle:
         json.dump(snapshot, handle, indent=2)
     return final_path
@@ -207,20 +156,7 @@ def run_analysis_cli(args):
     )
 
     has_observed_data = hasattr(fit_model, "data") and fit_model.data is not None
-    if args.toys is None:
-        use_observed_data = has_observed_data
-        use_asimov_data = False
-        n_toys = 1
-    elif args.toys == -1:
-        use_observed_data = False
-        use_asimov_data = True
-        n_toys = 1
-    elif args.toys < -1:
-        raise ValueError("Only --toys -1 is supported as special Asimov mode")
-    else:
-        use_observed_data = False
-        use_asimov_data = False
-        n_toys = int(args.toys)
+    use_observed_data, use_asimov_data, n_toys = resolve_dataset_mode(args.toys, has_observed_data)
 
     if int(getattr(args, "jobs", 1) or 1) > 1:
         print("Note: pyhf analysis currently runs sequentially; --jobs is not yet used.")
@@ -266,33 +202,24 @@ def run_analysis_cli(args):
                 f"1 sigma [{p16:.4g}, {p84:.4g}], "
                 f"2 sigma [{p2p5:.4g}, {p97p5:.4g}]"
             )
-    if summaries:
-        print(f"Average time per dataset: {total_time_s / len(summaries):.4f}s")
-    print(f"Total execution time: {total_time_s:.4f}s")
+    print_runtime_summary(summaries, total_time_s)
 
-    if args.plot:
-        plot_summary_artifacts(
-            summaries=summaries,
-            fit_model=fit_model,
-            plot_dir=os.path.abspath(args.plot_dir),
-            binned_bins=args.binned_bins,
-        )
-        print(f"Saved plots to: {os.path.abspath(args.plot_dir)}")
+    maybe_plot_summary_artifacts(args, summaries, fit_model, plot_summary_artifacts)
 
-    output = args.output or f"analysis_output_{args.seed}.json"
+    output = resolve_output_or_default(args.output, args.seed, ".json")
 
-    ensemble_report = _build_ensemble_evaluation_report(summaries=summaries, total_time_s=total_time_s)
-    report_path = _save_ensemble_report(
-        report=ensemble_report,
-        output=output,
+    save_and_print_ensemble_report(
+        summaries=summaries,
+        total_time_s=total_time_s,
+        output_path=output,
         report_file=args.report_file,
+        build_report_fn=_build_ensemble_evaluation_report,
     )
-    print(f"Saved ensemble evaluation report to: {report_path}")
 
-    snapshot_path = _save_analysis_snapshot(
+    save_and_print_snapshot(
         output_path=output,
         fit_model=fit_model,
         summaries=summaries,
         args=args,
+        save_snapshot_fn=_save_analysis_snapshot,
     )
-    print(f"Saved analysis snapshot to: {snapshot_path}")

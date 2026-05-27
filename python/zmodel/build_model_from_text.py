@@ -1,6 +1,7 @@
 import os
 import pickle
-from dataclasses import dataclass
+import pathlib
+import sys
 from typing import Dict, List, Optional, Tuple
 
 import dill
@@ -8,227 +9,29 @@ import numpy as np
 import zfit
 import zfit.z.numpy as znp
 
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from backends.card_parser import (
+    CardSpec,
+    parse_model_card as parse_common_model_card,
+)
+from backends.builder_common import (
+    kind_token,
+    make_term_mappings,
+    make_term_names,
+    resolve_shape_file_for_term,
+)
 from zmodel.model_io import save_fit_model_bundle
 from zmodel.utilities import FitModel
 from zmodel.functions import *
 
-@dataclass
-class UncertaintySpec:
-    name: str
-    kind: str
-    values: List[str]
-
-
-@dataclass
-class ConstraintSpec:
-    name: str
-    mean: float
-    width: float
-
-
-@dataclass
-class ShapeSpec:
-    process: str
-    channel: str
-    file: str
-
-
-@dataclass
-class CardSpec:
-    shape_specs: List[ShapeSpec]
-    is_counting: bool
-    channels: List[str]
-    bin_names: List[str]
-    process_names: List[str]
-    process_ids: List[int]
-    rates: List[Optional[float]]
-    uncertainties: List[UncertaintySpec]
-    observations: Dict[str, float]
-    data_obs_files: Dict[str, str]
-    category: Optional[str] = None
-    observation_count: Optional[float] = None
-    param_constraints: List[ConstraintSpec] = None
-
-    def __post_init__(self):
-        if self.param_constraints is None:
-            self.param_constraints = []
-        if self.category is None and self.channels:
-            self.category = self.channels[0]
-        if self.observation_count is None and self.observations:
-            self.observation_count = float(sum(self.observations.values()))
-
-
-def _has_shape_mapping(shape_specs: List[ShapeSpec], process: str, channel: str) -> bool:
-    for spec in shape_specs:
-        if spec.process.lower() == "data_obs":
-            continue
-        process_match = spec.process == "*" or spec.process == process
-        channel_match = spec.channel == "*" or spec.channel == channel
-        if process_match and channel_match:
-            return True
-    return False
-
-
-def _tokenize_card_line(line: str) -> List[str]:
-    text = line.strip()
-    if not text or text.startswith("#"):
-        return []
-    if "#" in text:
-        text = text.split("#", 1)[0].strip()
-    return text.split()
-
-
 def parse_model_card(card_path: str) -> CardSpec:
-    with open(card_path, "r", encoding="utf-8") as handle:
-        lines = [_tokenize_card_line(line) for line in handle]
-
-    tokens = [line for line in lines if line]
-
-    shape_specs: List[ShapeSpec] = []
-    bin_names: Optional[List[str]] = None
-    process_names: Optional[List[str]] = None
-    process_ids: Optional[List[int]] = None
-    rates: Optional[List[Optional[float]]] = None
-    uncertainties: List[UncertaintySpec] = []
-    param_constraints: List[ConstraintSpec] = []
-    process_line_count = 0
-    observations: Dict[str, float] = {}
-    data_obs_files: Dict[str, str] = {}
-    comment_markers = {"#", "//", "--"}
-
-    for fields in tokens:
-        key = fields[0].lower()
-        for marker in comment_markers:
-            key = key.split(marker, 1)[0].strip()
-        if not key:
-            continue
-
-        if key == "shapes":
-            if len(fields) not in (3, 4):
-                raise ValueError(f"Invalid shapes line: {' '.join(fields)}")
-
-            if len(fields) == 3:
-                process_target = fields[1]
-                channel_target = "*"
-                file_name = fields[2]
-            else:
-                process_target = fields[1]
-                channel_target = fields[2]
-                file_name = fields[3]
-
-            if not file_name.lower().endswith(".pkl"):
-                raise ValueError(
-                    f"Shape file '{file_name}' must be a pickle file (.pkl)"
-                )
-
-            if process_target.lower() == "data_obs":
-                data_obs_files[channel_target] = file_name
-            else:
-                shape_specs.append(
-                    ShapeSpec(process=process_target, channel=channel_target, file=file_name)
-                )
-            continue
-
-        if key == "bin":
-            if len(fields) < 2:
-                raise ValueError(f"Invalid bin line: {' '.join(fields)}")
-            bin_names = fields[1:]
-            continue
-
-        if key == "process":
-            process_line_count += 1
-            if process_line_count == 1:
-                process_names = fields[1:]
-            elif process_line_count == 2:
-                process_ids = [int(item) for item in fields[1:]]
-            else:
-                raise ValueError("Model card has more than two process lines")
-            continue
-
-        if key == "rate":
-            if process_names is None:
-                raise ValueError("rate line appears before process names")
-            values = fields[1:]
-            if len(values) != len(process_names):
-                raise ValueError("rate line length does not match process count")
-            rates = [None if value == "-" else float(value) for value in values]
-            continue
-
-        if key == "observation":
-            if len(fields) != 3:
-                raise ValueError(
-                    f"Invalid observation line: {' '.join(fields)}. Expected 'observation <category> <count>'"
-                )
-            observations[fields[1]] = float(fields[2])
-            continue
-
-        if len(fields) >= 4 and fields[1].lower() == "param":
-            try:
-                mean = float(fields[2])
-                width = float(fields[3])
-            except ValueError:
-                raise ValueError(f"Invalid param constraint line: {' '.join(fields)}. Expected '<name> param <mean> <width>'")
-            param_constraints.append(ConstraintSpec(name=fields[0], mean=mean, width=width))
-            continue
-
-        if len(fields) < 3:
-            raise ValueError(f"Invalid uncertainty line: {' '.join(fields)}")
-
-        uncertainties.append(UncertaintySpec(name=fields[0], kind=fields[1], values=fields[2:]))
-
-    if bin_names is None:
-        raise ValueError("Missing bin line")
-    if process_names is None:
-        raise ValueError("Missing process names line")
-    if process_ids is None:
-        raise ValueError("Missing process id line")
-    if rates is None:
-        raise ValueError("Missing rate line")
-    if len(process_names) != len(process_ids):
-        raise ValueError("process names and IDs length mismatch")
-    if len(bin_names) == 1 and len(process_names) > 1:
-        bin_names = [bin_names[0]] * len(process_names)
-    if len(bin_names) != len(process_names):
-        raise ValueError("bin line length does not match process count")
-
-    channels = list(dict.fromkeys(bin_names))
-
-    if observations:
-        unknown_obs = [name for name in observations if name not in channels]
-        if unknown_obs:
-            raise ValueError(f"Observation category not present in bin line: {unknown_obs}")
-
-    is_counting = len(shape_specs) == 0
-    if not is_counting:
-        for process, channel in zip(process_names, bin_names):
-            if not _has_shape_mapping(shape_specs, process, channel):
-                raise ValueError(
-                    f"Missing shape mapping for process/channel '{process}/{channel}'. "
-                    "Expected a matching line: shapes <process|*> <channel|*> <file>"
-                )
-
-    for unc in uncertainties:
-        if len(unc.values) != len(process_names):
-            raise ValueError(
-                f"Uncertainty '{unc.name}' has {len(unc.values)} values, expected {len(process_names)}"
-            )
-        if is_counting and unc.kind.strip().lower() == "shape":
-            raise ValueError(
-                f"Shape uncertainty '{unc.name}' is not allowed for counting models (no shapes section provided)"
-            )
-
-    return CardSpec(
-        shape_specs=shape_specs,
-        is_counting=is_counting,
-        channels=channels,
-        bin_names=bin_names,
-        process_names=process_names,
-        process_ids=process_ids,
-        rates=rates,
-        uncertainties=uncertainties,
-        observations=observations,
-        data_obs_files=data_obs_files,
-        param_constraints=param_constraints,
+    return parse_common_model_card(
+        card_path,
+        shape_extension=".pkl",
+        shape_description="a pickle file",
     )
 
 
@@ -241,40 +44,12 @@ def _load_shape_payload_from_file(file_path: str):
             return dill.load(handle)
 
 
-def _shape_mapping_rank(spec: ShapeSpec, process: str, channel: str) -> Optional[Tuple[int, int]]:
-    process_match = spec.process == "*" or spec.process == process
-    channel_match = spec.channel == "*" or spec.channel == channel
-    if not (process_match and channel_match):
-        return None
-    specificity = int(spec.process != "*") + int(spec.channel != "*")
-    return (specificity, 0)
-
-
-def _resolve_shape_file_for_term(card: CardSpec, process: str, channel: str) -> str:
-    best_spec = None
-    best_rank = None
-    for idx, spec in enumerate(card.shape_specs):
-        rank = _shape_mapping_rank(spec, process, channel)
-        if rank is None:
-            continue
-        ranked = (rank[0], idx)
-        if best_rank is None or ranked > best_rank:
-            best_rank = ranked
-            best_spec = spec
-
-    if best_spec is None:
-        raise ValueError(
-            f"No shape mapping found for process/channel '{process}/{channel}'"
-        )
-    return best_spec.file
-
-
 def _resolve_shape_payloads(card: CardSpec, card_dir: str):
     payloads = {}
 
     term_payloads = []
     for process, channel in zip(card.process_names, card.bin_names):
-        rel_path = _resolve_shape_file_for_term(card, process, channel)
+        rel_path = resolve_shape_file_for_term(card, process, channel)
         full_path = rel_path if os.path.isabs(rel_path) else os.path.join(card_dir, rel_path)
         full_path = os.path.abspath(full_path)
         if full_path not in payloads:
@@ -645,42 +420,17 @@ def _build_extended_sum_model(term_names, shapes, yields, model_name: str):
     return _create_extended_pdf(base_pdf, total_yield, name_suffix="_ext")
 
 
-def _kind_token(kind: str) -> str:
-    token = kind.strip()
-    if token == "lnN":
-        return "lnN"
-    lowered = token.lower()
-    if lowered == "gs":
-        return "gs"
-    if lowered == "shape":
-        return "shape"
-    raise ValueError(f"Unknown uncertainty type '{kind}'. Use lnN, gs, or shape.")
-
-
 def build_model_from_card(card: CardSpec, card_dir: str):
-    term_names = []
-    name_counts: Dict[str, int] = {}
-    for process, channel in zip(card.process_names, card.bin_names):
-        base = f"{process}__{channel}"
-        safe_base = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in base)
-        index = name_counts.get(safe_base, 0)
-        name_counts[safe_base] = index + 1
-        if index:
-            term_names.append(f"{safe_base}_{index}")
-        else:
-            term_names.append(safe_base)
+    term_names = make_term_names(card.process_names, card.bin_names)
 
     shapes = {}
     nominal_rates = {}
     process_payloads = []
-    term_channels = {
-        term_name: channel
-        for term_name, channel in zip(term_names, card.bin_names)
-    }
-    term_processes = {
-        term_name: process
-        for term_name, process in zip(term_names, card.process_names)
-    }
+    term_channels, term_processes = make_term_mappings(
+        term_names,
+        card.process_names,
+        card.bin_names,
+    )
     observed_counts_by_channel: Dict[str, float] = {}
     observed_values_by_channel: Dict[str, np.ndarray] = {}
 
@@ -799,7 +549,7 @@ def build_model_from_card(card: CardSpec, card_dir: str):
     }
 
     for unc in card.uncertainties:
-        kind = _kind_token(unc.kind)
+        kind = kind_token(unc.kind)
 
         if kind in ("lnN", "gs"):
             theta = zfit.Parameter(f"nuis_{unc.name}", 0.0, -7.0, 7.0)

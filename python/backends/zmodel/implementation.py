@@ -1,3 +1,5 @@
+import argparse
+
 from backends.common import (
     add_feldman_cousins_arguments,
     add_shared_analysis_arguments,
@@ -10,7 +12,7 @@ from backends.base import BaseBackend
 class ZModelBackend(BaseBackend):
     name = "zmodel"
     description = "Use zfit-based fitting implementation"
-    output_argument = "output_pkl"
+    output_argument = "output"
 
     def runtime_versions(self):
         from zmodel import __version__ as zmodel_version
@@ -66,10 +68,16 @@ class ZModelBackend(BaseBackend):
         )
         add_shared_analysis_arguments(
             parser,
-            output_flag="--output-pkl",
+            output_flag="--output",
             output_default="analysis_output.pkl",
             output_help="Output pickle file containing the fitted model, input data, and toy summaries",
             poi_scan_max_help="Optional upper edge for POI scan (lower edge uses POI lower bound/default)",
+        )
+        parser.add_argument(
+            "--output-pkl",
+            dest="output",
+            default=argparse.SUPPRESS,
+            help=argparse.SUPPRESS,
         )
 
     def build_defaults(self):

@@ -41,7 +41,7 @@ def _serialize_card(card, card_dir: Optional[str]) -> Dict[str, Any]:
 
 
 def _deserialize_card(card_payload: Dict[str, Any]):
-    from hfmodel.build_model_from_text import CardSpec, ShapeSpec, UncertaintySpec, ConstraintSpec
+    from backends.card_parser import CardSpec, ConstraintSpec, ShapeSpec, UncertaintySpec
 
     return CardSpec(
         shape_specs=[ShapeSpec(**item) for item in card_payload.get("shape_specs", [])],

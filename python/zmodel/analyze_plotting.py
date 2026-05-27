@@ -1,50 +1,16 @@
 import os
 
 import numpy as np
+from backends.zfit_parameter_utils import (
+    capture_fit_model_parameter_values as _capture_fit_model_parameter_values,
+    capture_parameter_values as _capture_parameter_values,
+    find_parameter_by_name,
+    restore_parameter_values as _restore_parameter_values,
+)
 
 
 def _find_parameter_by_name(fit_model, parameter_name):
-    seen = set()
-    channel_models = getattr(fit_model, "channel_models", {}) or {}
-    models = list(channel_models.values()) if channel_models else [fit_model.model]
-    for model in models:
-        for param in model.get_params():
-            ident = id(param)
-            if ident in seen:
-                continue
-            seen.add(ident)
-            if param.name == parameter_name:
-                return param
-    return None
-
-
-def _capture_parameter_values(model):
-    values = {}
-    for param in model.get_params():
-        if hasattr(param, "set_value"):
-            values[param] = float(param.value())
-    return values
-
-
-def _capture_fit_model_parameter_values(fit_model):
-    values = {}
-    seen = set()
-    channel_models = getattr(fit_model, "channel_models", {}) or {}
-    models = list(channel_models.values()) if channel_models else [fit_model.model]
-    for model in models:
-        for param in model.get_params():
-            ident = id(param)
-            if ident in seen:
-                continue
-            seen.add(ident)
-            if hasattr(param, "set_value"):
-                values[param] = float(param.value())
-    return values
-
-
-def _restore_parameter_values(saved_values):
-    for param, value in saved_values.items():
-        param.set_value(value)
+    return find_parameter_by_name(fit_model, parameter_name)
 
 
 def _restore_fit_params_by_name(fit_model, fit_params):

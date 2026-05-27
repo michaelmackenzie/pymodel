@@ -1,7 +1,8 @@
 import dill
-import json
 import multiprocessing as mp
 import os
+import pathlib
+import sys
 import time
 import warnings
 
@@ -14,6 +15,29 @@ os.environ.setdefault("AUTOGRAPH_VERBOSITY", "0")
 import numpy as np
 import tensorflow as tf
 import zfit
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from backends.analysis_console import print_dataset_summary_header, print_limit_summary_lines
+from backends.analysis_common import (
+    checkpoint_mismatches,
+    load_analysis_model,
+    resolve_data_mode,
+    resolve_dataset_mode,
+)
+from backends.analysis_reporting import (
+    add_fit_quality,
+    add_poi_distributions,
+    distribution_summary,
+    init_ensemble_report,
+    print_runtime_summary,
+    resolve_output_or_default,
+    save_and_print_ensemble_report,
+    save_and_print_snapshot,
+    maybe_plot_summary_artifacts,
+)
 
 from zmodel.build_model_from_text import build_model_from_card, parse_model_card
 from zmodel.model_io import load_fit_model
@@ -59,36 +83,25 @@ warnings.filterwarnings(
 
 
 def _load_analysis_model(model_file=None, input_card=None):
-    if model_file is not None:
-        return load_fit_model(os.path.abspath(model_file))
-
-    card_path = os.path.abspath(input_card)
-    card = parse_model_card(card_path)
-    return build_model_from_card(card, os.path.dirname(card_path))
+    return load_analysis_model(
+        model_file=model_file,
+        input_card=input_card,
+        load_fit_model_fn=load_fit_model,
+        parse_model_card_fn=parse_model_card,
+        build_model_from_card_fn=build_model_from_card,
+    )
 
 
 def _print_dataset_summary(summary, is_observed_fit=False):
-    poi_label = summary.get("poi_name", "poi")
-    poi_fit = summary.get("poi_fit")
-    poi_unc = summary.get("poi_unc_hesse")
-    fit_text = f"{poi_fit:.3g}" if poi_fit is not None else "n/a"
-    if poi_unc is None:
-        unc_text = "n/a"
-    elif np.isfinite(float(poi_unc)):
-        unc_text = f"{poi_unc:.3g}"
-    else:
-        unc_text = "unconstrained"
-    status_text = "valid" if summary['valid'] else "invalid"
-    if summary.get("asimov_fit") or summary.get("dataset_plot", {}).get("asimov"):
-        label = "Asimov data"
-    elif is_observed_fit or summary.get("observed_fit") or summary.get("dataset_plot", {}).get("observed"):
-        label = "Observed data"
-    else:
-        label = f"Toy {summary['dataset_id']:3d}"
-    print(
-        f"{label}: {status_text:<7}, "
-        f"{poi_label}={fit_text:<10} +- {unc_text:<10}, "
-        f"time={summary.get('dataset_time_s', float('nan')):.4f}s"
+    print_dataset_summary_header(
+        summary,
+        is_observed_fit=is_observed_fit,
+        fit_precision=".3g",
+        unc_precision=".3g",
+        unconstrained_text="unconstrained",
+        asimov_label="Asimov data",
+        observed_label="Observed data",
+        include_dataset_plot_flags=True,
     )
     # if "count" in summary:
     #     print(f"  Toy count: {summary['count']}")
@@ -98,37 +111,18 @@ def _print_dataset_summary(summary, is_observed_fit=False):
             f"  POI scan range: [{summary['poi_scan_low']:.6f}, {summary['poi_scan_high']:.6f}] "
             f"with {summary['poi_scan_points']} points"
         )
-    if "cls_observed" in summary:
-        print(f"  CLs observed upper limit: {summary['cls_observed']:.4f}")
-    if "cls_scan_points" in summary:
-        print(f"  CLs scan points: {summary['cls_scan_points']}")
-    if "cls_scan_max" in summary:
-        print(f"  CLs scan max: {summary['cls_scan_max']:.4g}")
-    if "cls_expected_quantiles" in summary:
-        q = summary["cls_expected_quantiles"]
-        print(
-            "  CLs expected (asymptotic, b-only fit): "
-            f"2.5%={q['2.5%']:.4f}, 16%={q['16%']:.4f}, 50%={q['50%']:.4f}, "
-            f"84%={q['84%']:.4f}, 97.5%={q['97.5%']:.4f}"
-        )
-    if "cls_expected_error" in summary:
-        print(f"  CLs expected failed: {summary['cls_expected_error']}")
-    if "yield_upper_limit" in summary:
-        print(f"  Yield upper limit: {summary['yield_upper_limit']:.4f}")
-    if "cls_error" in summary:
-        print(f"  CLs failed: {summary['cls_error']}")
-    if "feldman_cousins" in summary:
-        fc = summary["feldman_cousins"]
-        if isinstance(fc, dict):
-            if "fc_interval" in fc:
-                print(f"  Feldman-Cousins interval: {fc['fc_interval']}")
-            elif "fc_status" in fc:
-                print(f"  Feldman-Cousins: {fc['fc_status']}")
-            else:
-                print(f"  Feldman-Cousins: {fc}")
+    print_limit_summary_lines(
+        summary,
+        include_scan_details=True,
+        include_expected_error=True,
+        include_yield_upper=True,
+        feldman_status_prefix="Feldman-Cousins",
+        expected_label="CLs expected (asymptotic, b-only fit)",
+        expected_precision=".4f",
+    )
 
 
-def _save_analysis_snapshot(output_pkl, fit_model, summaries, args):
+def _save_analysis_snapshot(output_path, fit_model, summaries, args):
     payload = {
         "format": "analyze_model_snapshot_v1",
         "fit_model": fit_model,
@@ -164,78 +158,20 @@ def _save_analysis_snapshot(output_pkl, fit_model, summaries, args):
         },
     }
 
-    output_path = os.path.abspath(output_pkl)
-    with open(output_path, "wb") as handle:
+    final_path = os.path.abspath(output_path)
+    with open(final_path, "wb") as handle:
         dill.dump(payload, handle)
-    return output_path
-
-
-def _current_data_mode(use_observed_data, use_asimov_data):
-    if use_observed_data:
-        return "observed"
-    if use_asimov_data:
-        return "asimov"
-    return "toy"
-
-
-def _checkpoint_mismatches(checkpoint, expected):
-    mismatches = []
-    for key, expected_value in expected.items():
-        if key not in checkpoint:
-            mismatches.append((key, "<missing>", expected_value))
-            continue
-        if checkpoint.get(key) != expected_value:
-            mismatches.append((key, checkpoint.get(key), expected_value))
-    return mismatches
-
-
-def _distribution_summary(values):
-    arr = np.asarray(values, dtype=float)
-    arr = arr[np.isfinite(arr)]
-    if arr.size == 0:
-        return None
-
-    return {
-        "count": int(arr.size),
-        "mean": float(np.mean(arr)),
-        "std": float(np.std(arr)),
-        "median": float(np.median(arr)),
-        "min": float(np.min(arr)),
-        "max": float(np.max(arr)),
-        "p16": float(np.percentile(arr, 16)),
-        "p84": float(np.percentile(arr, 84)),
-    }
+    return final_path
 
 
 def _build_ensemble_evaluation_report(summaries, total_time_s):
-    report = {
-        "n_datasets": int(len(summaries)),
-        "runtime": {
-            "total_time_s": float(total_time_s),
-            "average_time_s": float(total_time_s / len(summaries)) if summaries else None,
-        },
-    }
+    report = init_ensemble_report(summaries, total_time_s)
 
     if not summaries:
         return report
 
-    valid_flags = [bool(summary.get("valid", False)) for summary in summaries]
-    n_valid = int(sum(valid_flags))
-    report["fit_quality"] = {
-        "n_valid": n_valid,
-        "n_invalid": int(len(summaries) - n_valid),
-        "valid_fraction": float(n_valid / len(summaries)),
-        "invalid_fraction": float((len(summaries) - n_valid) / len(summaries)),
-    }
-
-    report["poi_name"] = summaries[0].get("poi_name", "poi")
-
-    poi_fits = [summary.get("poi_fit") for summary in summaries]
-    poi_unc = [summary.get("poi_unc_hesse") for summary in summaries]
-    poi_pulls = [summary.get("poi_pull") for summary in summaries]
-    report["poi_fit"] = _distribution_summary(poi_fits)
-    report["poi_unc_hesse"] = _distribution_summary(poi_unc)
-    report["poi_pull"] = _distribution_summary(poi_pulls)
+    add_fit_quality(report, summaries, include_invalid_fraction=True)
+    add_poi_distributions(report, summaries)
 
     coverage_values = []
     for summary in summaries:
@@ -271,8 +207,8 @@ def _build_ensemble_evaluation_report(summaries, total_time_s):
     cls_failures = [summary for summary in summaries if "cls_error" in summary]
     if cls_obs or cls_yield or cls_failures:
         report["cls"] = {
-            "observed_limit": _distribution_summary(cls_obs),
-            "yield_upper_limit": _distribution_summary(cls_yield),
+            "observed_limit": distribution_summary(cls_obs),
+            "yield_upper_limit": distribution_summary(cls_yield),
             "n_failures": int(len(cls_failures)),
             "failure_fraction": float(len(cls_failures) / len(summaries)),
         }
@@ -304,22 +240,10 @@ def _build_ensemble_evaluation_report(summaries, total_time_s):
             "n_evaluated": int(len(fc_entries)),
             "n_ok": int(fc_ok),
             "n_non_ok": int(fc_fail),
-            "width": _distribution_summary(fc_widths),
+            "width": distribution_summary(fc_widths),
         }
 
     return report
-
-
-def _save_ensemble_report(report, output_pkl, report_file=None):
-    if report_file:
-        output_path = os.path.abspath(report_file)
-    else:
-        base, _ = os.path.splitext(os.path.abspath(output_pkl))
-        output_path = f"{base}_ensemble_report.json"
-
-    with open(output_path, "w", encoding="utf-8") as handle:
-        json.dump(report, handle, indent=2, sort_keys=True)
-    return output_path
 
 
 def _split_dataset_ranges(n_datasets, n_jobs):
@@ -399,20 +323,7 @@ def run_analysis_cli(args):
     zfit.settings.set_seed(args.seed)
 
     has_observed_data = hasattr(fit_model, "data") and fit_model.data is not None
-    if args.toys is None:
-        use_observed_data = has_observed_data
-        use_asimov_data = False
-        n_toys = 1
-    elif args.toys == -1:
-        use_observed_data = False
-        use_asimov_data = True
-        n_toys = 1
-    elif args.toys < -1:
-        raise ValueError("Only --toys -1 is supported as a special Asimov mode")
-    else:
-        use_observed_data = False
-        use_asimov_data = False
-        n_toys = int(args.toys)
+    use_observed_data, use_asimov_data, n_toys = resolve_dataset_mode(args.toys, has_observed_data)
 
     n_jobs = int(getattr(args, "jobs", 1) or 1)
     if n_jobs < 1:
@@ -431,7 +342,7 @@ def run_analysis_cli(args):
             with open(args.resume_from, "rb") as f:
                 checkpoint = dill.load(f)
                 expected_checkpoint_config = {
-                    "data_mode": _current_data_mode(use_observed_data, use_asimov_data),
+                    "data_mode": resolve_data_mode(use_observed_data, use_asimov_data),
                     "fit_mode": args.fit_mode,
                     "cls_alpha": args.cls,
                     "signal_strength": args.signal_strength,
@@ -449,7 +360,7 @@ def run_analysis_cli(args):
                     "nll_scan_points": int(args.nll_scan_points),
                     "ntoy_plots": int(args.ntoy_plots if args.plot else 0),
                 }
-                mismatches = _checkpoint_mismatches(checkpoint, expected_checkpoint_config)
+                mismatches = checkpoint_mismatches(checkpoint, expected_checkpoint_config)
                 if mismatches:
                     mismatch_text = ", ".join(
                         [f"{k}: checkpoint={old!r}, current={new!r}" for k, old, new in mismatches]
@@ -461,7 +372,7 @@ def run_analysis_cli(args):
 
                 existing_results = checkpoint.get("summaries", [])
                 resume_from_index = len(existing_results)
-                if _current_data_mode(use_observed_data, use_asimov_data) == "toy":
+                if resolve_data_mode(use_observed_data, use_asimov_data) == "toy":
                     print(f"Resumed from checkpoint: {len(existing_results)} toys already completed")
                 else:
                     print(f"Resumed from checkpoint: {len(existing_results)} datasets already completed")
@@ -560,7 +471,7 @@ def run_analysis_cli(args):
                 feldman_cousins_scan_max=args.fc_scan_max,
                 progress_callback=_print_dataset_summary,
                 checkpoint_freq=args.checkpoint_freq,
-                checkpoint_path=args.output_pkl + ".checkpoint" if args.checkpoint_freq else None,
+                checkpoint_path=args.output + ".checkpoint" if args.checkpoint_freq else None,
                 existing_results=existing_results,
                 resume_from_index=resume_from_index,
                 compute_nll_scan=args.plot,
@@ -586,35 +497,24 @@ def run_analysis_cli(args):
         elif "cls_error" in first:
             print(f"CLs failed (alpha={args.cls:g}): {first['cls_error']}")
 
-    if args.plot:
-        plot_summary_artifacts(
-            summaries=summaries,
-            fit_model=fit_model,
-            plot_dir=os.path.abspath(args.plot_dir),
-            binned_bins=args.binned_bins,
-        )
-        print(f"Saved plots to: {os.path.abspath(args.plot_dir)}")
+    maybe_plot_summary_artifacts(args, summaries, fit_model, plot_summary_artifacts)
 
-    if summaries:
-        print(f"Average time per dataset: {total_time_s / len(summaries):.4f}s")
-    print(f"Total execution time: {total_time_s:.4f}s")
+    print_runtime_summary(summaries, total_time_s)
 
-    output_pkl = args.output_pkl
-    if output_pkl is None:
-        output_pkl = f"analysis_output_{args.seed}.pkl"
+    output_pkl = resolve_output_or_default(args.output, args.seed, ".pkl")
 
-    ensemble_report = _build_ensemble_evaluation_report(summaries=summaries, total_time_s=total_time_s)
-    report_path = _save_ensemble_report(
-        report=ensemble_report,
-        output_pkl=output_pkl,
+    save_and_print_ensemble_report(
+        summaries=summaries,
+        total_time_s=total_time_s,
+        output_path=output_pkl,
         report_file=args.report_file,
+        build_report_fn=_build_ensemble_evaluation_report,
     )
-    print(f"Saved ensemble evaluation report to: {report_path}")
 
-    snapshot_path = _save_analysis_snapshot(
-        output_pkl=output_pkl,
+    save_and_print_snapshot(
+        output_path=output_pkl,
         fit_model=fit_model,
         summaries=summaries,
         args=args,
+        save_snapshot_fn=_save_analysis_snapshot,
     )
-    print(f"Saved analysis snapshot to: {snapshot_path}")

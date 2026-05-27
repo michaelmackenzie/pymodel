@@ -50,7 +50,7 @@ def _serialize_card(card, card_dir: Optional[str]) -> Dict[str, Any]:
 
 
 def _deserialize_card(card_payload: Dict[str, Any]):
-    from zmodel.build_model_from_text import CardSpec, ShapeSpec, UncertaintySpec, ConstraintSpec
+    from backends.card_parser import CardSpec, ConstraintSpec, ShapeSpec, UncertaintySpec
 
     shape_specs_payload = card_payload["shape_specs"]
     rates = list(card_payload["rates"])
