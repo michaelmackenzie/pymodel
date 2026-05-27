@@ -60,12 +60,6 @@ class ZModelBackend(BaseBackend):
             default=41,
             help="Number of scan points for --profile-scan",
         )
-        parser.add_argument(
-            "--ntoy-plots",
-            type=int,
-            default=1,
-            help="Number of toy datasets to individually plot when --plot is set (default: 1)",
-        )
         add_shared_analysis_arguments(
             parser,
             output_flag="--output",
@@ -77,7 +71,7 @@ class ZModelBackend(BaseBackend):
             "--output-pkl",
             dest="output",
             default=argparse.SUPPRESS,
-            help=argparse.SUPPRESS,
+            help="Compatibility alias for --output",
         )
 
     def build_defaults(self):

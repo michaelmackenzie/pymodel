@@ -346,7 +346,7 @@ def _plot_feldman_cousins_construction(summary, plot_dir):
     plt.close(fig)
 
 
-def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins):
+def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):
     _ = fit_model
     _ = binned_bins
     os.makedirs(plot_dir, exist_ok=True)
@@ -384,7 +384,11 @@ def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins):
         )
 
     if summaries:
-        _plot_first_dataset_channels(summaries[0], plot_dir)
-        _plot_delta_nll(summaries[0], plot_dir)
-        _plot_cls_band(summaries[0], plot_dir)
-        _plot_feldman_cousins_construction(summaries[0], plot_dir)
+        n_plot = max(0, int(ntoys_plot))
+        if n_plot == 0:
+            return
+        for summary in summaries[:n_plot]:
+            _plot_first_dataset_channels(summary, plot_dir)
+            _plot_delta_nll(summary, plot_dir)
+            _plot_cls_band(summary, plot_dir)
+            _plot_feldman_cousins_construction(summary, plot_dir)

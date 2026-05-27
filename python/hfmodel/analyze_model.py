@@ -123,6 +123,7 @@ def _save_analysis_snapshot(output_path, fit_model, summaries, args):
             "cls_scan_points": args.cls_scan_points,
             "plot": bool(args.plot),
             "plot_dir": args.plot_dir,
+            "ntoys_plot": args.ntoys_plot,
             "set_parameters": args.set_parameters,
             "freeze_parameters": args.freeze_parameters,
             "set_parameter_ranges": args.set_parameter_ranges,

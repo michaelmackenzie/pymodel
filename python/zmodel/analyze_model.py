@@ -151,7 +151,7 @@ def _save_analysis_snapshot(output_path, fit_model, summaries, args):
             "feldman_cousins_scan_max": args.fc_scan_max,
             "report_file": args.report_file,
             "nll_scan_points": args.nll_scan_points,
-            "ntoy_plots": args.ntoy_plots,
+            "ntoys_plot": args.ntoys_plot,
             "set_parameters": args.set_parameters,
             "freeze_parameters": args.freeze_parameters,
             "set_parameter_ranges": args.set_parameter_ranges,
@@ -305,7 +305,7 @@ def _run_parallel_worker(task):
         resume_from_index=start_index,
         compute_nll_scan=bool(task.get("compute_nll_scan", False)),
         nll_scan_points=int(task.get("nll_scan_points", 121)),
-        ntoy_plots=int(task.get("ntoy_plots", 0)),
+        ntoy_plots=int(task.get("ntoys_plot", 0)),
     )
     return summaries
 
@@ -358,7 +358,7 @@ def run_analysis_cli(args):
                     "feldman_cousins_scan_max": args.fc_scan_max,
                     "compute_nll_scan": bool(args.plot),
                     "nll_scan_points": int(args.nll_scan_points),
-                    "ntoy_plots": int(args.ntoy_plots if args.plot else 0),
+                    "ntoys_plot": int(args.ntoys_plot if args.plot else 0),
                 }
                 mismatches = checkpoint_mismatches(checkpoint, expected_checkpoint_config)
                 if mismatches:
@@ -424,9 +424,9 @@ def run_analysis_cli(args):
                         "fc_scan_points": int(args.fc_scan_points),
                         "fc_toys": int(args.fc_toys),
                         "fc_scan_max": args.fc_scan_max,
-                        "compute_nll_scan": bool(args.plot and start_index < args.ntoy_plots),
+                        "compute_nll_scan": bool(args.plot and start_index < args.ntoys_plot),
                         "nll_scan_points": int(args.nll_scan_points),
-                        "ntoy_plots": int(args.ntoy_plots if args.plot else 0),
+                        "ntoys_plot": int(args.ntoys_plot if args.plot else 0),
                     }
                 )
 
@@ -476,7 +476,7 @@ def run_analysis_cli(args):
                 resume_from_index=resume_from_index,
                 compute_nll_scan=args.plot,
                 nll_scan_points=args.nll_scan_points,
-                ntoy_plots=args.ntoy_plots if args.plot else 0
+                ntoy_plots=args.ntoys_plot if args.plot else 0
             )
         total_time_s = time.perf_counter() - total_start
     else:

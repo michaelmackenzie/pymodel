@@ -116,5 +116,6 @@ def maybe_plot_summary_artifacts(args, summaries, fit_model, plot_fn):
         fit_model=fit_model,
         plot_dir=plot_dir,
         binned_bins=args.binned_bins,
+        ntoys_plot=max(0, int(getattr(args, "ntoys_plot", 1))),
     )
     print(f"Saved plots to: {plot_dir}")

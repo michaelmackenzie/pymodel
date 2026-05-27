@@ -129,6 +129,14 @@ def add_shared_analysis_arguments(
         help="Output directory for --plot artifacts",
     )
     parser.add_argument(
+        "--ntoys-plot",
+        "--ntoy-plots",
+        dest="ntoys_plot",
+        type=int,
+        default=1,
+        help="Number of datasets to individually plot when --plot is set (default: 1)",
+    )
+    parser.add_argument(
         "--set-parameters",
         type=str,
         default=None,

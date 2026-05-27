@@ -396,7 +396,7 @@ def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
         _restore_parameter_values(baseline_values)
 
 
-def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins):
+def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):
     import matplotlib
 
     matplotlib.use("Agg")
@@ -434,10 +434,16 @@ def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins):
         fig.savefig(os.path.join(plot_dir, "poi_pull_distribution.png"), dpi=140)
         plt.close(fig)
 
-    for summary in summaries:
+    n_plot = max(0, int(ntoys_plot))
+    if n_plot == 0:
+        return
+
+    plot_summaries = summaries[:n_plot]
+
+    for summary in plot_summaries:
         plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins)
 
-    for summary in summaries:
+    for summary in plot_summaries:
         if "nll_scan" in summary:
             plot_nll_scan(summary, plot_dir)
 
