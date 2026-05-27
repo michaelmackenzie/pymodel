@@ -115,6 +115,10 @@ Shared options include:
 - --limit-poi-min X
 - --checkpoint-freq N
 - --output
+- --set-parameters NAME=VALUE,...
+- --freeze-parameters NAME,...
+- --set-parameter-ranges NAME=MIN:MAX,...
+- --plot (includes per-dataset plots, delta-NLL, CLs band, and Feldman-Cousins construction when requested)
 
 Backend-specific examples:
 
@@ -129,10 +133,6 @@ Backend-specific examples:
 	- --output-pkl (compatibility alias for --output)
 - roomodel:
 	- --fit-mode {auto,binned,unbinned}
-	- --set-parameters NAME=VALUE,...
-	- --freeze-parameters NAME,...
-	- --set-parameter-ranges NAME=MIN:MAX,...
-	- --plot (includes per-dataset plots, delta-NLL, CLs band, and Feldman-Cousins construction when requested)
 
 ## Plotting Existing Snapshots
 
