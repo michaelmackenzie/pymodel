@@ -1,6 +1,7 @@
 # Example of a cut-and-count analysis with two categories
 # Build the model from this text card:
-# pymodel hfmodel build counting_categories.txt counting_categories_model.json
+#   cd examples/hfmodel
+#   pymodel hfmodel build counting_categories.txt counting_categories_model.json
 
 observation bin_1 100
 observation bin_2  40

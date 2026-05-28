@@ -3,7 +3,7 @@
 # the nominal signal mean. A Gaussian constraint keeps the offset near zero.
 #
 # Step 1: generate the shapes payload in the examples/ directory:
-#   cd examples && python simple_shapes.py
+#   cd examples/zmodel && python simple_shapes.py
 # Step 2: build the model bundle from this card:
 #   pymodel zmodel build simple_shapes_card.txt model.pkl
 

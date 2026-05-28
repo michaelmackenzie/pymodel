@@ -1,7 +1,7 @@
 # Two-channel shape model matching ConvAna/pyhf/examples/simple_shapes.py
 #
 # Step 1: generate the workspace JSON
-#   cd examples && python simple_shapes_two_channel.py
+#   cd examples/hfmodel && python simple_shapes_two_channel.py
 #
 # Step 2: build model bundle from this card
 #   pymodel hfmodel build simple_shapes_two_channel_card.txt simple_shapes_two_channel_model.json

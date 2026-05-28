@@ -2,7 +2,8 @@
 # No shapes file needed; the counting model is built directly from rates.
 #
 # Build and analyze:
-#   pymodel roomodel build examples/roomodel/counting_example.txt model.root
+#   cd examples/roomodel
+#   pymodel roomodel build counting_example.txt model.root
 #   pymodel roomodel analyze --model-file model.root --toys 50
 
 bin           demo   demo

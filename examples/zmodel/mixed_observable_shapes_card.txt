@@ -2,7 +2,7 @@
 # catA uses variable massA in [100, 110], catB uses energyB in [0, 200].
 #
 # Step 1: generate payloads
-#   cd examples && python mixed_observable_shapes.py
+#   cd examples/zmodel && python mixed_observable_shapes.py
 #
 # Step 2: build model
 #   pymodel zmodel build mixed_observable_shapes_card.txt model_mixed_observable.pkl

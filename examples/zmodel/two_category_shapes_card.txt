@@ -1,7 +1,7 @@
 # Two-category shape-based model card (simultaneous fit across catA and catB).
 #
 # Step 1: generate payloads in examples/
-#   cd examples && python two_category_shapes.py
+#   cd examples/zmodel && python two_category_shapes.py
 #
 # Step 2: build model bundle from this card
 #   pymodel zmodel build two_category_shapes_card.txt model_two_category.pkl

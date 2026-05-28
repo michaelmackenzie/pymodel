@@ -1,6 +1,7 @@
 # Example of a cut-and-count analysis
 # Build the model from this text card:
-# pymodel hfmodel build counting_example.txt
+#   cd examples/hfmodel
+#   pymodel hfmodel build counting_example.txt
 
 observation demo 100
 
