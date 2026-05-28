@@ -3,9 +3,9 @@
 # Step 1: generate the shapes workspace in the examples/roomodel directory:
 #   python simple_shapes.py
 # Step 2: build the model bundle from this card:
-#   python python/pymodel roomodel build examples/roomodel/simple_shapes_card.txt model.root
+#   pymodel roomodel build examples/roomodel/simple_shapes_card.txt model.root
 # Step 3: run analysis:
-#   python python/pymodel roomodel analyze --model-file model.root --toys 50
+#   pymodel roomodel analyze --model-file model.root --toys 50
 
 shapes * * simple_shapes.root
 shapes data_obs * simple_shapes.root

@@ -5,7 +5,7 @@
 # Step 1: generate the shapes payload in the examples/ directory:
 #   cd examples && python simple_shapes.py
 # Step 2: build the model bundle from this card:
-#   zmodel build simple_shapes_card.txt model.pkl
+#   pymodel zmodel build simple_shapes_card.txt model.pkl
 
 shapes * * simple_shapes.pkl
 shapes data_obs * simple_shapes.pkl

@@ -4,7 +4,7 @@
 #   cd examples && python simple_shapes_two_channel.py
 #
 # Step 2: build model bundle from this card
-#   hfmodel build simple_shapes_two_channel_card.txt simple_shapes_two_channel_model.json
+#   pymodel hfmodel build simple_shapes_two_channel_card.txt simple_shapes_two_channel_model.json
 
 shapes * * simple_shapes_two_channel_workspace.json
 shapes data_obs * simple_shapes_two_channel_workspace.json

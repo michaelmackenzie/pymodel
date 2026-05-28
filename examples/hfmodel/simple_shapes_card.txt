@@ -3,7 +3,7 @@
 # Step 1: generate the shapes payload in the examples/ directory:
 #   cd examples && python simple_shapes.py
 # Step 2: build the model bundle from this card:
-#   hfmodel build simple_shapes_card.txt model.json
+#   pymodel hfmodel build simple_shapes_card.txt model.json
 
 shapes * * simple_shapes_workspace.json
 shapes data_obs * simple_shapes_workspace.json

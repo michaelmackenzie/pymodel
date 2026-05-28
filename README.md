@@ -56,37 +56,47 @@ pyenv rootana 2.5.0
 
 ## Quick Start
 
+Add the repository command wrapper and Python modules to your environment:
+
+~~~bash
+export PYMODEL_REPO=$PWD
+export PATH="$PATH:$PYMODEL_REPO/bin"
+export PYTHONPATH="$PYTHONPATH:$PYMODEL_REPO"
+~~~
+
 Use the unified CLI:
 
 ~~~bash
-python3 python/pymodel --help
-python3 python/pymodel hfmodel --help
-python3 python/pymodel zmodel --help
-python3 python/pymodel roomodel --help
+pymodel --help
+pymodel hfmodel --help
+pymodel zmodel --help
+pymodel roomodel --help
 ~~~
+
+Example cards and helper scripts are in `examples/hfmodel`, `examples/zmodel`, and `examples/roomodel`.
 
 Build a model from a text card:
 
 ~~~bash
-python3 python/pymodel hfmodel build examples/hfmodel/simple_shapes_card.txt
-python3 python/pymodel zmodel build examples/zmodel/simple_shapes_card.txt
-python3 python/pymodel roomodel build examples/roomodel/simple_shapes_card.txt
+pymodel hfmodel build examples/hfmodel/simple_shapes_card.txt
+pymodel zmodel build examples/zmodel/simple_shapes_card.txt
+pymodel roomodel build examples/roomodel/simple_shapes_card.txt
 ~~~
 
 Load and summarize a saved model:
 
 ~~~bash
-python3 python/pymodel hfmodel load model.json
-python3 python/pymodel zmodel load model.pkl
-python3 python/pymodel roomodel load model.root
+pymodel hfmodel load model.json
+pymodel zmodel load model.pkl
+pymodel roomodel load model.root
 ~~~
 
 Run analysis:
 
 ~~~bash
-python3 python/pymodel hfmodel analyze --model-file model.json
-python3 python/pymodel zmodel analyze --model-file model.pkl
-python3 python/pymodel roomodel analyze --model-file model.root
+pymodel hfmodel analyze --model-file model.json
+pymodel zmodel analyze --model-file model.pkl
+pymodel roomodel analyze --model-file model.root
 ~~~
 
 ## Backend Output Formats
@@ -195,4 +205,3 @@ python3 tests/regression_examples_smoke.py
 ## Notes
 
 - Relative paths in cards are recommended for portability.
-- `roomodel` supports direct ROOT/RooFit workflows without converting to pyhf/zfit payloads.

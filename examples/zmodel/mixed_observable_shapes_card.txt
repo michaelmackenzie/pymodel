@@ -5,7 +5,7 @@
 #   cd examples && python mixed_observable_shapes.py
 #
 # Step 2: build model
-#   zmodel build mixed_observable_shapes_card.txt model_mixed_observable.pkl
+#   pymodel zmodel build mixed_observable_shapes_card.txt model_mixed_observable.pkl
 
 shapes * catA mixed_observable_shapes_catA.pkl
 shapes * catB mixed_observable_shapes_catB.pkl

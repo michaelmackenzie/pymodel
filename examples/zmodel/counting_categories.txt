@@ -1,6 +1,6 @@
 # Example of a cut-and-count analysis with two categories
 # Build the model from this text card:
-# zmodel build counting_categories.txt
+# pymodel zmodel build counting_categories.txt
 
 observation bin_1 100
 observation bin_2  40

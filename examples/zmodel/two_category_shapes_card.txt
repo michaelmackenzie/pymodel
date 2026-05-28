@@ -4,7 +4,7 @@
 #   cd examples && python two_category_shapes.py
 #
 # Step 2: build model bundle from this card
-#   zmodel build two_category_shapes_card.txt model_two_category.pkl
+#   pymodel zmodel build two_category_shapes_card.txt model_two_category.pkl
 
 shapes * catA simple_shapes_catA.pkl
 shapes * catB simple_shapes_catB.pkl
