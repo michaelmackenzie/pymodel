@@ -140,7 +140,6 @@ Backend-specific examples:
 	- --graph-mode {auto,on,off}
 	- --profile-scan
 	- --poi-name
-	- --output-pkl (compatibility alias for --output)
 - roomodel:
 	- --fit-mode {auto,binned,unbinned}
 
@@ -151,7 +150,7 @@ Plot helper scripts are backend-specific wrappers:
 ~~~bash
 python3 python/hfmodel/plot_analysis.py analysis_output.json --plot-dir plots_hf
 python3 python/zmodel/plot_analysis.py analysis_output.pkl --plot-dir plots_z
-python3 python/pymodel roomodel analyze --model-file model.root --plot --ntoys-plot 1 --output analysis_output_roomodel.json
+pymodel roomodel analyze --model-file model.root --plot --ntoys-plot 1 --output analysis_output_roomodel.json
 ~~~
 
 ## Card Format Conversion

@@ -1,5 +1,3 @@
-import argparse
-
 from backends.common import (
     add_feldman_cousins_arguments,
     add_shared_analysis_arguments,
@@ -66,12 +64,6 @@ class ZModelBackend(BaseBackend):
             output_default="analysis_output.pkl",
             output_help="Output pickle file containing the fitted model, input data, and toy summaries",
             poi_scan_max_help="Optional upper edge for POI scan (lower edge uses POI lower bound/default)",
-        )
-        parser.add_argument(
-            "--output-pkl",
-            dest="output",
-            default=argparse.SUPPRESS,
-            help="Compatibility alias for --output",
         )
 
     def build_defaults(self):

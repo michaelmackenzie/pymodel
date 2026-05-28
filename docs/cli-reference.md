@@ -86,7 +86,6 @@ Defined by [python/backends/zmodel/implementation.py](../python/backends/zmodel/
 - `--profile-scan`
 - `--poi-name`
 - `--promote-poi`
-- `--output-pkl` (compatibility alias for `--output`)
 
 ## roomodel-Specific Analyze Flags
 
