@@ -1,28 +1,16 @@
 import os
 
 import numpy as np
+from backends.analyze_plotting_common import (
+    plot_cls_scan as _plot_cls_scan_common,
+    plot_delta_nll_scan as _plot_delta_nll_scan_common,
+    plot_feldman_cousins as _plot_feldman_cousins_common,
+    plot_hist as _plot_hist_common,
+)
 
 
 def _hist(values, title, xlabel, output_file, bins=30):
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    arr = np.asarray(values, dtype=float)
-    arr = arr[np.isfinite(arr)]
-    if arr.size == 0:
-        return
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.hist(arr, bins=max(5, min(int(bins), 80)), color="#4C78A8", alpha=0.85, edgecolor="black")
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Entries")
-    ax.grid(alpha=0.25)
-    plt.tight_layout()
-    plt.savefig(output_file, dpi=150)
-    plt.close(fig)
+    _plot_hist_common(values=values, title=title, xlabel=xlabel, output_file=output_file, bins=bins, add_grid=True)
 
 
 def _plot_dataset(summary, plot_dir):
@@ -162,75 +150,36 @@ def _plot_dataset(summary, plot_dir):
 
 def _plot_delta_nll(summary, plot_dir):
     payload = summary.get("delta_nll_scan") or {}
-    x = np.asarray(payload.get("x", []), dtype=float)
-    y = np.asarray(payload.get("delta_nll", []), dtype=float)
-    if x.size == 0 or y.size != x.size:
-        return
-
-    mask = np.isfinite(x) & np.isfinite(y)
-    if not np.any(mask):
-        return
-    x = x[mask]
-    y = y[mask]
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     dataset_id = int(summary.get("dataset_id", 0))
-    poi_name = str(payload.get("poi_name", "POI"))
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(x, y, color="#4C78A8", linewidth=2.0)
-    ax.axhline(0.5, color="#54A24B", linestyle="--", linewidth=1.2, label=r"$\Delta\mathrm{NLL}=0.5$")
-    ax.axhline(2.0, color="#E45756", linestyle=":", linewidth=1.2, label=r"$\Delta\mathrm{NLL}=2.0$")
-    ax.set_xlabel(poi_name)
-    ax.set_ylabel(r"$\Delta \mathrm{NLL}$")
-    ax.set_title(f"Delta NLL Scan (Dataset {dataset_id})")
-    ax.grid(alpha=0.25)
-    ax.legend(loc="best")
-    plt.tight_layout()
-    plt.savefig(os.path.join(plot_dir, f"delta_nll_{dataset_id:04d}.png"), dpi=150)
-    plt.close(fig)
+    _plot_delta_nll_scan_common(
+        x_values=payload.get("x", []),
+        y_values=payload.get("delta_nll", []),
+        poi_name=str(payload.get("poi_name", "POI")),
+        output_file=os.path.join(plot_dir, f"delta_nll_{dataset_id:04d}.png"),
+        title=f"Delta NLL Scan (Dataset {dataset_id})",
+        y_label=r"$\Delta \mathrm{NLL}$",
+        reference_lines=(
+            (0.5, "#54A24B", "--", r"$\Delta\mathrm{NLL}=0.5$"),
+            (2.0, "#E45756", ":", r"$\Delta\mathrm{NLL}=2.0$"),
+        ),
+        line_color="#4C78A8",
+        line_label=r"$\Delta\mathrm{NLL}$",
+    )
 
 
 def _plot_cls_band(summary, plot_dir):
     cls_curve = summary.get("cls_curve", {})
     if not isinstance(cls_curve, dict):
         return
-
-    x = np.asarray(cls_curve.get("pois", []), dtype=float)
-    y = np.asarray(cls_curve.get("observed", []), dtype=float)
-    if x.size == 0 or y.size != x.size:
-        return
-
-    mask = np.isfinite(x) & np.isfinite(y)
-    if not np.any(mask):
-        return
-    x = x[mask]
-    y = y[mask]
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     dataset_id = int(summary.get("dataset_id", 0))
-    alpha = float(summary.get("cls_alpha", 0.05))
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(x, y, color="#4C78A8", linewidth=2.0, label="Observed CLs")
-    ax.axhline(alpha, color="#E45756", linestyle="--", linewidth=1.4, label=f"alpha={alpha:g}")
-    ax.set_xlabel(summary.get("poi_name", "POI"))
-    ax.set_ylabel("CLs")
-    ax.set_ylim(bottom=0.0)
-    ax.set_title(f"CLs Scan (Dataset {dataset_id})")
-    ax.grid(alpha=0.25)
-    ax.legend(loc="best")
-    plt.tight_layout()
-    plt.savefig(os.path.join(plot_dir, f"dataset_{dataset_id:04d}_cls_band.png"), dpi=150)
-    plt.close(fig)
+    _plot_cls_scan_common(
+        pois=cls_curve.get("pois", []),
+        observed=cls_curve.get("observed", []),
+        output_file=os.path.join(plot_dir, f"dataset_{dataset_id:04d}_cls_band.png"),
+        poi_name=summary.get("poi_name", "POI"),
+        alpha=float(summary.get("cls_alpha", 0.05)),
+        title=f"CLs Scan (Dataset {dataset_id})",
+    )
 
 
 def _plot_feldman_cousins_construction(summary, plot_dir):
@@ -238,46 +187,18 @@ def _plot_feldman_cousins_construction(summary, plot_dir):
     if not isinstance(fc, dict):
         return
     grid = fc.get("grid") or {}
-
-    x = np.asarray(grid.get("poi", []), dtype=float)
-    q_obs = np.asarray(grid.get("q_obs", []), dtype=float)
-    q_crit = np.asarray(grid.get("q_crit", []), dtype=float)
-    if x.size == 0 or q_obs.size != x.size or q_crit.size != x.size:
-        return
-
-    mask = np.isfinite(x) & np.isfinite(q_obs) & np.isfinite(q_crit)
-    if not np.any(mask):
-        return
-    x = x[mask]
-    q_obs = q_obs[mask]
-    q_crit = q_crit[mask]
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     dataset_id = int(summary.get("dataset_id", 0))
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(x, q_obs, color="#4C78A8", linewidth=2.0, label="q_obs")
-    ax.plot(x, q_crit, color="#E45756", linestyle="--", linewidth=1.4, label="q_crit")
-
-    interval = fc.get("fc_interval")
-    if isinstance(interval, (list, tuple)) and len(interval) == 2:
-        lo = float(interval[0])
-        hi = float(interval[1])
-        if np.isfinite(lo) and np.isfinite(hi) and hi >= lo:
-            ax.axvspan(lo, hi, color="#54A24B", alpha=0.2, label="Accepted interval")
-
-    ax.set_xlabel(fc.get("poi_name", summary.get("poi_name", "POI")))
-    ax.set_ylabel("Profile-likelihood q")
-    ax.set_title(f"Feldman-Cousins Construction (Dataset {dataset_id})")
-    ax.grid(alpha=0.25)
-    ax.legend(loc="best")
-    plt.tight_layout()
-    plt.savefig(os.path.join(plot_dir, f"dataset_{dataset_id:04d}_feldman_cousins.png"), dpi=150)
-    plt.close(fig)
+    _plot_feldman_cousins_common(
+        poi=grid.get("poi", []),
+        q_obs=grid.get("q_obs", []),
+        q_crit=grid.get("q_crit", []),
+        output_file=os.path.join(plot_dir, f"dataset_{dataset_id:04d}_feldman_cousins.png"),
+        poi_name=fc.get("poi_name", summary.get("poi_name", "POI")),
+        interval=fc.get("fc_interval"),
+        alpha=fc.get("alpha"),
+        y_label="Profile-likelihood q",
+        title_base=f"Feldman-Cousins Construction (Dataset {dataset_id})",
+    )
 
 
 def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):

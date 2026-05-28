@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+from backends.analyze_plotting_common import plot_hist as _plot_hist_common
 from backends.zfit_parameter_utils import (
     capture_fit_model_parameter_values as _capture_fit_model_parameter_values,
     capture_parameter_values as _capture_parameter_values,
@@ -397,11 +398,6 @@ def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
 
 
 def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     os.makedirs(plot_dir, exist_ok=True)
 
     param_values = {}
@@ -412,27 +408,25 @@ def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_pl
     for name, values in param_values.items():
         if not values:
             continue
-        fig, ax = plt.subplots(figsize=(7, 4))
-        ax.hist(values, bins=min(40, max(10, int(np.sqrt(len(values)) * 2))), alpha=0.8)
-        ax.set_title(f"Fit Parameter Distribution: {name}")
-        ax.set_xlabel(name)
-        ax.set_ylabel("Entries")
-        ax.grid(alpha=0.25)
-        fig.tight_layout()
-        fig.savefig(os.path.join(plot_dir, f"fit_param_{name}.png"), dpi=140)
-        plt.close(fig)
+        _plot_hist_common(
+            values=values,
+            title=f"Fit Parameter Distribution: {name}",
+            xlabel=name,
+            output_file=os.path.join(plot_dir, f"fit_param_{name}.png"),
+            bins=min(40, max(10, int(np.sqrt(len(values)) * 2))),
+            add_grid=True,
+        )
 
     pulls = [summary.get("poi_pull") for summary in summaries if summary.get("poi_pull") is not None]
     if pulls:
-        fig, ax = plt.subplots(figsize=(7, 4))
-        ax.hist(pulls, bins=min(40, max(10, int(np.sqrt(len(pulls)) * 2))), alpha=0.8)
-        ax.set_title("POI Pull Distribution")
-        ax.set_xlabel("(POI_fit - POI_true) / sigma_Hesse")
-        ax.set_ylabel("Entries")
-        ax.grid(alpha=0.25)
-        fig.tight_layout()
-        fig.savefig(os.path.join(plot_dir, "poi_pull_distribution.png"), dpi=140)
-        plt.close(fig)
+        _plot_hist_common(
+            values=pulls,
+            title="POI Pull Distribution",
+            xlabel="(POI_fit - POI_true) / sigma_Hesse",
+            output_file=os.path.join(plot_dir, "poi_pull_distribution.png"),
+            bins=min(40, max(10, int(np.sqrt(len(pulls)) * 2))),
+            add_grid=True,
+        )
 
     n_plot = max(0, int(ntoys_plot))
     if n_plot == 0:
