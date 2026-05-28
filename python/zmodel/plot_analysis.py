@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-import sys
 
 # Allow importing project modules when running from zmodel.
-import pathlib
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from backends.path_bootstrap import ensure_repo_root_on_path
 
-from backends.plot_analysis_common import run_plot_snapshot_cli
-from zmodel.analyze_plotting import plot_summary_artifacts
+ensure_repo_root_on_path(__file__)
+
+from backends.plot_analysis_common import run_backend_plot_snapshot_cli
 
 
 def main():
-    run_plot_snapshot_cli(plot_summary_artifacts)
+    run_backend_plot_snapshot_cli("zmodel")
 
 
 if __name__ == "__main__":

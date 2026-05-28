@@ -1,16 +1,14 @@
 import copy
 import json
 import os
-import pathlib
-import sys
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pyhf
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from backends.path_bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path(__file__)
 
 from backends.card_parser import (
     CardSpec,

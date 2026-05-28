@@ -1,15 +1,13 @@
 import json
 import os
-import pathlib
-import sys
 import time
 
 import numpy as np
 import pyhf
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from backends.path_bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path(__file__)
 
 from backends.analysis_console import print_dataset_summary_header, print_limit_summary_lines
 from backends.analysis_common import load_analysis_model, normalize_output_path, resolve_dataset_mode

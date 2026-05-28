@@ -1,7 +1,10 @@
 import os
 
 import numpy as np
-from backends.analyze_plotting_common import plot_hist as _plot_hist_common
+from backends.analyze_plotting_common import (
+    plot_delta_nll_scan as _plot_delta_nll_scan_common,
+    plot_hist as _plot_hist_common,
+)
 from backends.zfit_parameter_utils import (
     capture_fit_model_parameter_values as _capture_fit_model_parameter_values,
     capture_parameter_values as _capture_parameter_values,
@@ -443,23 +446,18 @@ def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_pl
 
 
 def plot_nll_scan(summary, plot_dir):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     scan = summary["nll_scan"]
+    poi_name = scan["poi_name"]
     poi_values = np.asarray(scan["poi_values"], dtype=float)
     delta_nll = np.asarray(scan["delta_nll_values"], dtype=float)
-    poi_name = scan["poi_name"]
 
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(poi_values, delta_nll, color="tab:blue", linewidth=1.8)
-    ax.axhline(0.5, color="tab:orange", linestyle="--", linewidth=1.2, label=r"1$\sigma$ ($\Delta$NLL = 0.5)")
-    ax.axhline(2.0, color="tab:red", linestyle=":", linewidth=1.2, label=r"2$\sigma$ ($\Delta$NLL = 2.0)")
-
-    # Mark best-fit value
-    best_idx = int(np.argmin(delta_nll))
-    ax.axvline(poi_values[best_idx], color="black", linestyle="-.", linewidth=1.0, label=f"Best fit: {poi_values[best_idx]:.3g}")
+    vertical_lines = ()
+    if poi_values.size and delta_nll.size == poi_values.size and np.any(np.isfinite(delta_nll)):
+        best_idx = int(np.nanargmin(delta_nll))
+        if np.isfinite(poi_values[best_idx]):
+            vertical_lines = (
+                (poi_values[best_idx], "black", "-.", f"Best fit: {poi_values[best_idx]:.3g}"),
+            )
 
     dataset_plot = _summary_dataset_plot(summary)
     dataset_id = _summary_dataset_id(summary)
@@ -471,11 +469,18 @@ def plot_nll_scan(summary, plot_dir):
     else:
         title = f"NLL Profile – Toy {dataset_id} ({poi_name})"
 
-    ax.set_title(title)
-    ax.set_xlabel(poi_name)
-    ax.set_ylabel(r"$\Delta$ NLL")
-    ax.legend(fontsize=9)
-    ax.grid(alpha=0.25)
-    fig.tight_layout()
-    fig.savefig(os.path.join(plot_dir, f"nll_profile_{dataset_id:04d}.png"), dpi=140)
-    plt.close(fig)
+    _plot_delta_nll_scan_common(
+        x_values=scan["poi_values"],
+        y_values=scan["delta_nll_values"],
+        poi_name=poi_name,
+        output_file=os.path.join(plot_dir, f"nll_profile_{dataset_id:04d}.png"),
+        title=title,
+        y_label=r"$\Delta$ NLL",
+        reference_lines=(
+            (0.5, "tab:orange", "--", r"1$\sigma$ ($\Delta$NLL = 0.5)"),
+            (2.0, "tab:red", ":", r"2$\sigma$ ($\Delta$NLL = 2.0)"),
+        ),
+        vertical_lines=vertical_lines,
+        line_color="tab:blue",
+        line_label=r"$\Delta$NLL",
+    )

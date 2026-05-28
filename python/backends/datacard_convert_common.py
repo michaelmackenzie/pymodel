@@ -507,3 +507,38 @@ def run_converter_cli(
         handle.write(output_text)
 
     print(f"Wrote converted card: {output_card}")
+
+
+def build_backend_converter_functions(backend_name: str, backend_shape_ext: str):
+    def convert_to_backend(
+        parsed: ParsedCard,
+        shapes_file: Optional[str],
+        map_process_names: bool = True,
+        workspace_name_mapping: Optional[Dict[str, str]] = None,
+    ) -> str:
+        return convert_combine_to_backend(
+            parsed=parsed,
+            shapes_file=shapes_file,
+            backend_name=backend_name,
+            backend_shape_ext=backend_shape_ext,
+            map_process_names=map_process_names,
+            workspace_name_mapping=workspace_name_mapping,
+        )
+
+    def convert_to_combine(
+        parsed: ParsedCard,
+        root_file: str,
+        workspace_name: str,
+        pdf_template: str,
+        syst_template: str,
+    ) -> str:
+        return convert_backend_to_combine(
+            parsed=parsed,
+            backend_name=backend_name,
+            root_file=root_file,
+            workspace_name=workspace_name,
+            pdf_template=pdf_template,
+            syst_template=syst_template,
+        )
+
+    return convert_to_backend, convert_to_combine

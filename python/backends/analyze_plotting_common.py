@@ -51,6 +51,7 @@ def plot_delta_nll_scan(
     reference_lines,
     line_color="#2E6F95",
     line_label=r"$\Delta$NLL",
+    vertical_lines=(),
 ):
     x, y = _finite_pair(x_values, y_values)
     if x is None:
@@ -61,6 +62,8 @@ def plot_delta_nll_scan(
     ax.plot(x, y, color=line_color, linewidth=2.0, label=line_label)
     for yref, color, linestyle, label in reference_lines:
         ax.axhline(float(yref), color=color, linestyle=linestyle, linewidth=1.2, label=label)
+    for xref, color, linestyle, label in vertical_lines:
+        ax.axvline(float(xref), color=color, linestyle=linestyle, linewidth=1.0, label=label)
 
     ax.set_xlabel(poi_name or "POI")
     ax.set_ylabel(y_label)

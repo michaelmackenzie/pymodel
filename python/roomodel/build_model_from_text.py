@@ -5,9 +5,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from backends.path_bootstrap import ensure_repo_root_on_path
+
+ensure_repo_root_on_path(__file__)
 
 from backends.builder_common import resolve_shape_file_for_term
 from backends.card_parser import CardSpec, parse_model_card as parse_common_model_card

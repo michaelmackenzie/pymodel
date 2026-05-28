@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import importlib
 import os
 
 import dill
@@ -64,3 +65,9 @@ def run_plot_snapshot_cli(plot_summary_artifacts_fn):
     print(f"Loaded snapshot: {snapshot_path}")
     print(f"Generated plots from {len(summaries)} fit summary entries")
     print(f"Saved plots to: {plot_dir}")
+
+
+def run_backend_plot_snapshot_cli(backend_name):
+    module = importlib.import_module(f"{backend_name}.analyze_plotting")
+    plot_summary_artifacts_fn = getattr(module, "plot_summary_artifacts")
+    run_plot_snapshot_cli(plot_summary_artifacts_fn)
