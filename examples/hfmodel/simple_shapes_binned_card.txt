@@ -1,0 +1,22 @@
+# Binned example model card using simple_shapes_binned_workspace.json.
+# The signal PDF is a Gaussian at mean=105, sigma=0.35.
+# The background PDF is an Exponential with lambda=-0.25.
+# Both PDFs are evaluated in 20 bins from 100 to 110.
+# The data_obs is binned (counts per bin) rather than unbinned (events).
+#
+# Step 1: generate the shapes payload in the examples/ directory:
+#   cd examples/hfmodel && python simple_shapes_binned.py
+# Step 2: build the model bundle from this card:
+#   pymodel hfmodel build simple_shapes_binned_card.txt model.json
+
+shapes * * simple_shapes_binned_workspace.json
+shapes data_obs * simple_shapes_binned_workspace.json
+
+bin     demo demo
+process  sig  bkg
+process   -1   1
+rate     12   80
+
+# Systematic uncertainties (rate-only, no shape uncertainties)
+lumi      lnN   1.05   1.05
+bkg_norm  lnN    -     1.10

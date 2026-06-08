@@ -1,82 +1,27 @@
 import __main__
 import json
 import os
-import pickle
-from dataclasses import asdict
 from typing import Any, Dict, Optional
+import pickle
 
 import zfit
-import zfit.z.numpy as znp
 
-from backends.analysis_common import is_signal_strength_poi
 from zmodel.utilities import FitModel
 
 
-def _clip(value):
-    return znp.minimum(1.0, znp.maximum(-1.0, value))
+# ===========================================================================
 
 
 def _inject_hs3_helpers():
-    __main__.znp = znp
-    __main__._clip = _clip
-
-
-def _serialize_card(card, card_dir: Optional[str]) -> Dict[str, Any]:
-    payload = asdict(card)
-    if card_dir is None:
-        return payload
-
-    resolved_specs = []
-    for shape_spec in payload.get("shape_specs", []):
-        shape_file = shape_spec["file"]
-        if not os.path.isabs(shape_file):
-            shape_file = os.path.abspath(os.path.join(card_dir, shape_file))
-        resolved_specs.append(
-            {
-                "process": shape_spec["process"],
-                "channel": shape_spec["channel"],
-                "file": shape_file,
-            }
-        )
-    payload["shape_specs"] = resolved_specs
-
-    resolved_data_obs = {}
-    for channel, obs_file in payload.get("data_obs_files", {}).items():
-        if os.path.isabs(obs_file):
-            resolved_data_obs[channel] = obs_file
-        else:
-            resolved_data_obs[channel] = os.path.abspath(os.path.join(card_dir, obs_file))
-    payload["data_obs_files"] = resolved_data_obs
-    return payload
-
-
-def _deserialize_card(card_payload: Dict[str, Any]):
-    from backends.card_parser import CardSpec, ConstraintSpec, ShapeSpec, UncertaintySpec
-
-    shape_specs_payload = card_payload["shape_specs"]
-    rates = list(card_payload["rates"])
-    channels = list(card_payload["channels"])
-    bin_names = list(card_payload["bin_names"])
-    observations = dict(card_payload.get("observations", {}))
-
-    return CardSpec(
-        shape_specs=[ShapeSpec(**item) for item in shape_specs_payload],
-        is_counting=bool(card_payload.get("is_counting", False)),
-        channels=channels,
-        bin_names=bin_names,
-        process_names=list(card_payload["process_names"]),
-        process_ids=list(card_payload["process_ids"]),
-        rates=rates,
-        uncertainties=[UncertaintySpec(**item) for item in card_payload.get("uncertainties", [])],
-        observations=observations,
-        data_obs_files=dict(card_payload.get("data_obs_files", {})),
-        category=card_payload.get("category"),
-        observation_count=card_payload.get("observation_count"),
-        param_constraints=[ConstraintSpec(**item) for item in card_payload.get("param_constraints", [])],
-    )
+    """Inject helpers into __main__ for zfit HS3 JSON serialization."""
+    __main__.zfit = zfit
+    __main__.znp = zfit.z.numpy
+    __main__.zk = zfit.z
 
 
 def save_fit_model_bundle(fit_model: FitModel, output_file: str, card=None, card_dir: Optional[str] = None):
+    # card and card_dir are accepted for API compatibility but are ignored
+    # since the HS3 model is already self-contained
     hs3_payload = zfit.hs3.dumps(fit_model.model)
     try:
         json.dumps(hs3_payload)
@@ -93,9 +38,8 @@ def save_fit_model_bundle(fit_model: FitModel, output_file: str, card=None, card
         },
         "hs3_model": hs3_json_payload,
     }
-
-    if card is not None:
-        bundle["card"] = _serialize_card(card, card_dir)
+    # Note: zmodel's hs3_model is already self-contained with all PDFs and parameters.
+    # No "card" block is saved anymore since the model doesn't need external references.
 
     ext = os.path.splitext(output_file)[1].lower()
     if ext == ".json":
@@ -166,18 +110,11 @@ def load_fit_model(model_file: str) -> FitModel:
             payload = json.load(handle)
 
     if payload.get("format") == "fit_model_bundle_v1":
-        card_payload = payload.get("card")
-        if card_payload is not None:
-            from zmodel.build_model_from_text import build_model_from_card
-
-            card = _deserialize_card(card_payload)
-            return build_model_from_card(card, os.path.dirname(os.path.abspath(model_file)))
-
+        # Always reconstruct from the self-contained HS3 payload.
+        # Any legacy "card" block referencing external shape files is ignored.
         hs3_payload = payload.get("hs3_model")
         if hs3_payload is None:
-            raise ValueError(
-                "Saved bundle has no JSON-serializable HS3 payload and no card to rebuild from"
-            )
+            raise ValueError("Saved bundle is missing HS3 model payload")
         return _fit_model_from_hs3_payload(hs3_payload, payload.get("fit_metadata"))
 
     raise ValueError(f"Unsupported model file format in {model_file}")

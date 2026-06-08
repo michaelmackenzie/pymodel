@@ -769,5 +769,5 @@ def build_and_save_model_from_card_file(input_card: str, output_file: str) -> st
         fit_model.data = float(sum(card.observations.values()))
 
     output_path = os.path.abspath(output_file)
-    save_fit_model_bundle(fit_model, output_path, card=card, card_dir=card_dir)
+    save_fit_model_bundle(fit_model, output_path)  # card parameter ignored since hs3 is self-contained
     return output_path
