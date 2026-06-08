@@ -110,7 +110,7 @@ def _zmodel_smoke(repo, cli):
             "0.05",
             "--cls-scan-points",
             "7",
-            "--output-pkl",
+            "--output",
             output_snapshot,
         ],
         cwd=repo,

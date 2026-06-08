@@ -31,7 +31,7 @@ def main():
         _assert_in(hf_help, token, "hfmodel analyze help")
 
     z_help = _run(cli + ["zmodel", "analyze", "--help"], cwd=repo)
-    for token in ["--fit-mode", "--graph-mode", "--output-pkl", "--profile-scan"]:
+    for token in ["--fit-mode", "--graph-mode", "--output", "--profile-scan"]:
         _assert_in(z_help, token, "zmodel analyze help")
 
     roo_help = _run(cli + ["roomodel", "analyze", "--help"], cwd=repo)
