@@ -467,5 +467,5 @@ def build_and_save_model_from_card_file(input_card: str, output_file: str) -> st
     output_path = os.path.abspath(output_file)
     if not output_path.lower().endswith(".json"):
         output_path = f"{output_path}.json"
-    save_fit_model_bundle(fit_model, output_path, card=card, card_dir=card_dir)
+    save_fit_model_bundle(fit_model, output_path)
     return output_path
