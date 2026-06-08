@@ -35,6 +35,21 @@ from backends.analysis_types import CLsResult, FCResult, FitResult, NLLScanResul
 
 
 # ===========================================================================
+# Section 0 – Shared naming conventions
+# ===========================================================================
+
+def is_signal_strength_poi(name: str) -> bool:
+    """Return True when *name* identifies a signal-strength parameter.
+
+    A signal-strength POI is either the bare name ``"mu"`` (the default for
+    models with a single signal process) or any name that starts with the
+    ``"mu_"`` prefix (multi-process models or legacy names).
+    """
+    s = str(name)
+    return s == "mu" or s.startswith("mu_")
+
+
+# ===========================================================================
 # Section 1 – Original helpers (unchanged public API)
 # ===========================================================================
 

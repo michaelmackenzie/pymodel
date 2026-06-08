@@ -16,7 +16,7 @@ def _print_startup_header(backend):
 
 
 def _add_backend_command_parsers(backend_parser, backend):
-    subparsers = backend_parser.add_subparsers(dest="command", required=True)
+    subparsers = backend_parser.add_subparsers(dest="command", required=False)
 
     build_parser = subparsers.add_parser("build", help="Build and save a model from a text card")
     backend.add_build_arguments(build_parser)
@@ -29,7 +29,7 @@ def _add_backend_command_parsers(backend_parser, backend):
 
 
 def build_parser(backends: Dict[str, BaseBackend]):
-    parser = argparse.ArgumentParser(description="Top-level CLI for pyhf/zfit model workflows")
+    parser = argparse.ArgumentParser(description="Top-level CLI for pyhf/zfit/RooFit model workflows")
     backend_subparsers = parser.add_subparsers(dest="backend_name", required=True)
 
     for backend_name, backend in backends.items():
@@ -62,24 +62,51 @@ def _print_load_summary(summary):
 def run(argv=None):
     backends = get_backends()
     parser = build_parser(backends)
+    
+    # If no subcommand (build/load/analyze) is provided, default to "analyze"
+    # by injecting it into argv before parsing.
+    if argv is None:
+        import sys
+        argv = sys.argv[1:]
+    else:
+        argv = list(argv)
+    
+    # Structure: pymodel <backend> [subcommand] [args...]
+    # argv[0] = backend name (e.g., 'roomodel', 'hfmodel', 'zmodel')
+    # argv[1] = either a subcommand ('build', 'load', 'analyze') or an option/file
+    # 
+    # If argv has at least 2 elements and argv[1] is NOT a known subcommand
+    # and does NOT start with '-', then it's likely a file/positional arg for
+    # the default analyze command. Inject 'analyze'.
+    known_subcommands = {"build", "load", "analyze"}
+    
+    if len(argv) > 1 and argv[1] not in known_subcommands and not argv[1].startswith("-"):
+        # argv[1] looks like a file or positional arg, not a subcommand
+        argv.insert(1, "analyze")
+    elif len(argv) > 1 and argv[1].startswith("-"):
+        # argv[1] is an option flag (e.g., '-c', '--input-card'), so we need 'analyze'
+        argv.insert(1, "analyze")
+    
     args = parser.parse_args(argv)
 
     backend = backends[args.backend_name]
     _print_startup_header(backend)
 
-    if args.command == "build":
+    command = getattr(args, "command", "analyze") or "analyze"
+
+    if command == "build":
         output_path = backend.build_model(args.input_card, args.output_file)
         print(f"Saved FitModel to {output_path}")
         return 0
 
-    if args.command == "load":
+    if command == "load":
         summary = backend.load_summary(args.model_file, verbose=args.verbose)
         _print_load_summary(summary)
         return 0
 
-    if args.command == "analyze":
+    if command == "analyze":
         backend.run_analysis(args)
         return 0
 
-    parser.error(f"Unknown command: {args.command}")
+    parser.error(f"Unknown command: {command}")
     return 2

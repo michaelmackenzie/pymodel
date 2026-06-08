@@ -21,6 +21,7 @@ ensure_repo_root_on_path(__file__)
 from backends.analysis_console import print_dataset_summary_header, print_limit_summary_lines
 from backends.analysis_common import (
     checkpoint_mismatches,
+    is_signal_strength_poi,
     load_analysis_model,
     resolve_data_mode,
     resolve_dataset_mode,
@@ -329,7 +330,7 @@ def run_analysis_cli(args):
     poi_ranges = []
     
     # Determine if this is a signal strength parameter
-    poi_is_signal_strength = poi_name is not None and poi_name.startswith("mu_")
+    poi_is_signal_strength = poi_name is not None and is_signal_strength_poi(poi_name)
     
     # Get existing parameter bounds if POI is a model parameter
     default_poi_min = None

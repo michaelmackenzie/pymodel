@@ -31,6 +31,7 @@ from backends.zfit_parameter_utils import (
     restore_parameter_values as _restore_parameter_values,
 )
 from backends.analysis_common import (
+    is_signal_strength_poi,
     resolve_data_mode as _resolve_data_mode,
     run_analysis_common,
 )
@@ -481,7 +482,7 @@ def _find_signal_parameter(fit_model):
                 return param
 
     for param in _all_params(fit_model):
-        if param.name.startswith("mu_"):
+        if is_signal_strength_poi(param.name):
             return param
 
     if fit_model.signal_process and getattr(fit_model, "yields", None):
@@ -515,7 +516,7 @@ def _resolve_poi_parameter(fit_model, poi_name=None, promote_poi=False):
 def _default_scan_max(signal_param, fit_model):
     if signal_param is None:
         return None
-    if signal_param.name.startswith("mu_"):
+    if is_signal_strength_poi(signal_param.name):
         return 5.0
     if fit_model.signal_nominal_yield is not None:
         return max(50.0, 3.0 * fit_model.signal_nominal_yield)
@@ -806,7 +807,7 @@ def run_analysis(
         except Exception:
             pass
 
-    poi_is_ss = str(poi_param.name).startswith("mu_")
+    poi_is_ss = is_signal_strength_poi(poi_param.name)
 
     # ------------------------------------------------------------------
     # 3. Construct state and adapter

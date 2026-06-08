@@ -618,7 +618,14 @@ def build_model_from_card(card: CardSpec, card_dir: str):
         if process in signal_processes:
             mu = signal_strength_params.get(process)
             if mu is None:
-                mu = zfit.Parameter(f"mu_{process}", 1.0, 0.0, 100.0)
+                # Use bare "mu" for a single signal process; for multiple
+                # signal processes fall back to the per-process name so each
+                # has a distinct parameter.
+                if len(signal_processes) == 1:
+                    poi_param_name = "mu"
+                else:
+                    poi_param_name = f"mu_{process}"
+                mu = zfit.Parameter(poi_param_name, 1.0, 0.0, 100.0)
                 signal_strength_params[process] = mu
             all_factors.insert(0, mu)
 

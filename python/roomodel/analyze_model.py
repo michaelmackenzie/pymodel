@@ -9,7 +9,7 @@ from backends.path_bootstrap import ensure_repo_root_on_path
 
 ensure_repo_root_on_path(__file__)
 
-from backends.analysis_common import normalize_output_path, resolve_dataset_mode
+from backends.analysis_common import is_signal_strength_poi, normalize_output_path, resolve_dataset_mode
 from backends.analysis_reporting import (
     add_fit_quality,
     add_poi_distributions,
@@ -111,7 +111,7 @@ def _resolve_obs_var(dataset_or_ws, workspace):
             is_const = True
         if is_const:
             continue
-        if name.startswith("mu_") or name.startswith("yield_") or name.startswith("rate_"):
+        if is_signal_strength_poi(name) or name.startswith("yield_") or name.startswith("rate_"):
             continue
         return var
     return None
@@ -169,7 +169,7 @@ def _model_observable_set(workspace, model, dataset, obs_var=None):
                     continue
                 name = str(obj.GetName())
                 if (
-                    name.startswith("mu_")
+                    is_signal_strength_poi(name)
                     or name.startswith("rate_")
                     or name.startswith("yield_")
                     or name.startswith("sig_")
@@ -196,7 +196,7 @@ def _model_observable_set(workspace, model, dataset, obs_var=None):
             for obj in shape_obs:
                 name = str(obj.GetName())
                 if (
-                    name.startswith("mu_")
+                    is_signal_strength_poi(name)
                     or name.startswith("rate_")
                     or name.startswith("yield_")
                     or name.startswith("sig_")
@@ -440,7 +440,7 @@ def _resolve_channel_obs_var(workspace, channel_pdf):
                 continue
             name = str(obj.GetName())
             if (
-                name.startswith("mu_")
+                is_signal_strength_poi(name)
                 or name.startswith("rate_")
                 or name.startswith("yield_")
                 or name.startswith("sig_")
@@ -1164,7 +1164,7 @@ def _build_asimov_for_simultaneous(workspace, model):
                     continue
                 name = str(obj.GetName())
                 if (
-                    name.startswith("mu_")
+                    is_signal_strength_poi(name)
                     or name.startswith("rate_")
                     or name.startswith("yield_")
                     or name.startswith("sig_")

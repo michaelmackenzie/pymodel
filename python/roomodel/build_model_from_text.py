@@ -123,7 +123,12 @@ def _make_signal_strength_var(ws, signal_processes: List[str], mu_min: float = 0
     ROOT = _get_root()
     if not signal_processes:
         return None
-    poi_name = f"mu_{signal_processes[0]}"
+    # Use bare "mu" for a single signal process; for multiple signal processes
+    # use the per-process name so each has a distinct parameter.
+    if len(signal_processes) == 1:
+        poi_name = "mu"
+    else:
+        poi_name = f"mu_{signal_processes[0]}"
     poi = ROOT.RooRealVar(poi_name, poi_name, 1.0, float(mu_min), float(mu_max))
     getattr(ws, "import")(poi)
     return poi
@@ -162,11 +167,11 @@ def _build_counting_workspace(card: CardSpec):
     channel_model_names = []
 
     observed_counts = {}
-    signal_processes = [
+    signal_processes = list(dict.fromkeys(
         process
         for process, pid in zip(card.process_names, card.process_ids)
         if int(pid) <= 0
-    ]
+    ))
     poi = _make_signal_strength_var(ws, signal_processes, mu_min=_physical_mu_min_from_card(card, signal_processes))
 
     for channel in card.channels:
@@ -237,11 +242,11 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
     ROOT = _get_root()
     ws = ROOT.RooWorkspace("workspace")
 
-    signal_processes = [
+    signal_processes = list(dict.fromkeys(
         process
         for process, pid in zip(card.process_names, card.process_ids)
         if int(pid) <= 0
-    ]
+    ))
     signal_set = set(signal_processes)
     poi = _make_signal_strength_var(ws, signal_processes, mu_min=_physical_mu_min_from_card(card, signal_processes))
 
@@ -441,9 +446,14 @@ def build_model_from_card(card: CardSpec, card_dir: str):
     else:
         ws, model_name, data_name, observed_counts, signal_processes = _build_shape_workspace(card, card_dir)
 
-    poi_name = "mu"
-    if signal_processes:
+    # Use bare "mu" for a single signal process; for multiple signal processes
+    # use the per-process name consistent with _make_signal_strength_var.
+    if len(signal_processes) == 1:
+        poi_name = "mu"
+    elif signal_processes:
         poi_name = f"mu_{signal_processes[0]}"
+    else:
+        poi_name = "mu"
 
     # Count constraints and floating (nuisance) parameters from the card.
     # Each UncertaintySpec row that has at least one non-"-" value contributes

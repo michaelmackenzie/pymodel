@@ -2,6 +2,7 @@ import os
 
 import numpy as np
 
+from backends.analysis_common import is_signal_strength_poi
 from zmodel.model_io import load_fit_model
 
 
@@ -107,7 +108,7 @@ def load_and_summarize_model(model_file: str, verbose: int = 0):
 
     poi_name = None
     for param in fit_model.model.get_params(floating=None):
-        if getattr(param, "name", "").startswith("mu_"):
+        if is_signal_strength_poi(getattr(param, "name", "")):
             poi_name = param.name
             break
     if poi_name is None and getattr(fit_model, "signal_process", None):

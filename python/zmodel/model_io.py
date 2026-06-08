@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 import zfit
 import zfit.z.numpy as znp
 
+from backends.analysis_common import is_signal_strength_poi
 from zmodel.utilities import FitModel
 
 
@@ -132,8 +133,10 @@ def _fit_model_from_hs3_payload(hs3_payload: Dict[str, Any], fit_metadata: Optio
 
     if signal_process is None:
         for param in model.get_params():
-            if param.name.startswith("mu_"):
-                signal_process = param.name[3:]
+            if is_signal_strength_poi(param.name):
+                # Strip "mu_" prefix to recover the process name, or leave None
+                # for the bare "mu" case (single-process default).
+                signal_process = param.name[3:] if param.name.startswith("mu_") else None
                 break
 
     return FitModel(
