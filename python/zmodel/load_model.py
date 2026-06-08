@@ -26,10 +26,17 @@ def _parameter_value_text(param):
 
 
 def _dataset_observed_count(data):
+    """Count observed data events.
+    
+    For unbinned data, returns the number of data points.
+    For binned data, returns the sum of bin contents.
+    """
     if data is None:
         return None
     if isinstance(data, (int, float)):
-        return float(data)
+        # Return as int if it's a whole number, float otherwise
+        val = float(data)
+        return int(val) if val == int(val) else val
     if isinstance(data, dict):
         total = 0.0
         for data_item in data.values():
@@ -37,17 +44,28 @@ def _dataset_observed_count(data):
             if value is None:
                 return None
             total += value
-        return total
+        # Return as int if total is a whole number, float otherwise
+        return int(total) if total == int(total) else total
 
     if hasattr(data, "values") and callable(data.values):
         values = np.asarray(data.values(), dtype=float)
-        return float(np.sum(values))
+        # For 1D arrays (unbinned data), count the points; for higher dims (binned), sum
+        if values.ndim == 1:
+            total = float(values.shape[0])
+        else:
+            total = float(np.sum(values))
+        # Return as int if total is a whole number, float otherwise
+        return int(total) if total == int(total) else total
 
     if hasattr(data, "value") and callable(data.value):
         values = np.asarray(data.value(), dtype=float)
-        if values.ndim == 1:
-            return float(values.shape[0])
-        return float(np.sum(values))
+        if values.ndim == 0:
+            total = 1.0
+        else:
+            # For zfit Data, value() returns unbinned data points; count them
+            total = float(values.shape[0])
+        # Return as int if total is a whole number, float otherwise
+        return int(total) if total == int(total) else total
 
     return None
 

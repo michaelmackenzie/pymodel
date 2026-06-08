@@ -60,17 +60,31 @@ def _resolve_shape_payloads(card: CardSpec, card_dir: str):
 
 
 def _observed_entries_from_dataset(data_obs) -> Optional[float]:
+    """Get the observed data count (number of events for unbinned, sum of bin contents for binned).
+    
+    For unbinned data, we count the number of data points.
+    For binned data, we sum the bin contents.
+    """
     try:
+        # Try dict-like access (e.g., zfit.Data.to_numpy() result or {"values": array})
         values = data_obs.values()
-        return float(np.sum(np.asarray(values, dtype=float)))
+        arr = np.asarray(values, dtype=float)
+        # If the array is 1D, it's likely unbinned data points; return count
+        # If 2D or higher, it might be binned or multi-dimensional; return sum
+        if arr.ndim == 1:
+            return float(arr.shape[0])  # Count of unbinned data points
+        else:
+            return float(np.sum(arr))  # Sum of binned data
     except Exception:
         pass
 
     try:
+        # Try direct value access (for zfit.Data objects)
         values = data_obs.value()
         arr = np.asarray(values)
         if arr.ndim == 0:
             return 1.0
+        # For zfit Data, the value() returns unbinned data points; count them
         return float(arr.shape[0])
     except Exception:
         return None
