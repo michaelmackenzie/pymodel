@@ -107,6 +107,18 @@ def add_shared_analysis_arguments(
         default=None,
         help=poi_scan_max_help,
     )
+    parser.add_argument(
+        "--poi-min",
+        type=float,
+        default=None,
+        help="Override the POI lower bound (e.g. for signal strength, set to -Nbackground/Nsignal to allow negative mu)",
+    )
+    parser.add_argument(
+        "--poi-max",
+        type=float,
+        default=None,
+        help="Override the POI upper bound (default: derived from parameter constraints or heuristic)",
+    )
 
     if include_plot_alias:
         parser.add_argument(

@@ -25,6 +25,7 @@ from backends.analysis_common import (
     resolve_data_mode,
     resolve_dataset_mode,
 )
+from backends.zfit_parameter_utils import find_parameter_by_name
 from backends.analysis_reporting import (
     add_fit_quality,
     add_poi_distributions,
@@ -311,10 +312,75 @@ def _run_parallel_worker(task):
 
 def run_analysis_cli(args):
     fit_model = _load_analysis_model(model_file=args.model_file, input_card=args.input_card)
+
+    # Construct set_ranges_spec to include --poi-min and --poi-max if provided
+    set_ranges_spec = args.set_parameter_ranges or ""
+    poi_name = getattr(fit_model, "poi_name", None)
+    if poi_name is None and hasattr(fit_model, "model"):
+        # Try to infer POI name from signal parameter
+        from zmodel.analysis_core import _resolve_poi_parameter
+        poi_param = _resolve_poi_parameter(fit_model)
+        if poi_param:
+            poi_name = poi_param.name
+    
+    # Append POI bounds to the ranges spec if provided
+    # For signal strength parameters (mu_*), default minimum is 0
+    # For other parameters promoted to POI, use their existing bounds
+    poi_ranges = []
+    
+    # Determine if this is a signal strength parameter
+    poi_is_signal_strength = poi_name is not None and poi_name.startswith("mu_")
+    
+    # Get existing parameter bounds if POI is a model parameter
+    default_poi_min = None
+    default_poi_max = None
+    if poi_name is not None:
+        poi_param = find_parameter_by_name(fit_model, poi_name) if hasattr(fit_model, 'model') else None
+        if poi_param is not None:
+            default_poi_min = getattr(poi_param, 'lower', None)
+            default_poi_max = getattr(poi_param, 'upper', None)
+    
+    # Set POI minimum
+    poi_min = getattr(args, "poi_min", None)
+    if poi_min is not None:
+        poi_ranges.append(f"{poi_name}={poi_min}")
+    elif poi_is_signal_strength:
+        # Default minimum for signal strength parameters is 0
+        poi_ranges.append(f"{poi_name}=0")
+    elif default_poi_min is not None:
+        # Use existing parameter bound for promoted POI
+        try:
+            poi_ranges.append(f"{poi_name}={float(default_poi_min)}")
+        except (ValueError, TypeError):
+            pass  # If conversion fails, don't set a default
+    
+    # Set POI maximum
+    poi_max = getattr(args, "poi_max", None)
+    if poi_max is not None:
+        if poi_ranges:
+            poi_ranges[-1] += f":{poi_max}"
+        else:
+            # Only poi_max provided; need to construct with explicit minimum
+            if poi_is_signal_strength:
+                poi_ranges.append(f"{poi_name}=0:{poi_max}")
+            elif default_poi_min is not None:
+                try:
+                    poi_ranges.append(f"{poi_name}={float(default_poi_min)}:{poi_max}")
+                except (ValueError, TypeError):
+                    poi_ranges.append(f"{poi_name}=:{poi_max}")
+            else:
+                poi_ranges.append(f"{poi_name}=:{poi_max}")
+    
+    if poi_ranges:
+        if set_ranges_spec:
+            set_ranges_spec = f"{set_ranges_spec},{','.join(poi_ranges)}"
+        else:
+            set_ranges_spec = ",".join(poi_ranges)
+
     apply_parameter_overrides(
         fit_model,
         set_values_spec=args.set_parameters,
-        set_ranges_spec=args.set_parameter_ranges,
+        set_ranges_spec=set_ranges_spec,
         freeze_spec=args.freeze_parameters,
     )
 

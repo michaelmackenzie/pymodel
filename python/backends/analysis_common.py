@@ -720,6 +720,14 @@ def compute_feldman_cousins(
 
     starting_snapshot = backend.snapshot_parameters(state)
 
+    # Capture the current dataset as the "observed" data for this FC call.
+    # This is the iteration dataset (real observed, Asimov, or outer-loop toy)
+    # that was active before any FC toy generation begins.  We must restore it
+    # before computing q_obs at each grid point because the inner toy loop
+    # overwrites state.current_data with toy datasets, which would cause q_obs
+    # to be evaluated on the wrong data for every grid point after the first.
+    iteration_data = backend.get_current_data(state)
+
     q_obs_values: List[Optional[float]] = []
     q_crit_values: List[Optional[float]] = []
     toy_valid_counts: List[int] = []
@@ -730,7 +738,10 @@ def compute_feldman_cousins(
     try:
         for imu, mu_test in enumerate(poi_grid):
             # --- observed q_mu at this grid point ---
+            # Restore both parameters AND the iteration data so that q_obs is
+            # always computed on the same dataset regardless of toy generation.
             backend.restore_parameters(state, starting_snapshot)
+            backend.set_data(state, iteration_data)
             q_obs = _compute_q_mu(backend, state, float(mu_test))
 
             if q_obs is None:

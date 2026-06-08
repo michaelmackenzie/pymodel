@@ -141,6 +141,16 @@ class AnalysisBackend(ABC):
         """Return the observed (real) dataset from the fit model."""
 
     @abstractmethod
+    def get_current_data(self, state: Any) -> Any:
+        """Return the dataset currently loaded into *state*.
+
+        This is the data that will be used by the next call to ``fit`` or
+        ``evaluate_nll``.  For backends where the data is embedded in the loss
+        function (e.g. zfit), this returns the dataset that was last passed to
+        ``set_data``.
+        """
+
+    @abstractmethod
     def set_data(self, state: Any, data: Any) -> None:
         """Replace the current dataset in *state* with *data*.
 

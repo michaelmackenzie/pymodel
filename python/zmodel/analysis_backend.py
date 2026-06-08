@@ -231,6 +231,11 @@ class ZfitAnalysisBackend(AnalysisBackend):
     def get_observed_data(self, state: ZfitAnalysisState) -> Any:
         return state.fit_model.data
 
+    def get_current_data(self, state: ZfitAnalysisState) -> Any:
+        if state.current_data is None:
+            return state.fit_model.data
+        return state.current_data
+
     def set_data(self, state: ZfitAnalysisState, data: Any) -> None:
         """Replace the current dataset and rebuild the loss function."""
         state.current_data = data

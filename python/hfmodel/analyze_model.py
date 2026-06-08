@@ -147,10 +147,31 @@ def run_analysis_cli(args):
     print(f"Using pyhf backend: {backend}")
 
     fit_model = _load_analysis_model(model_file=args.model_file, input_card=args.input_card)
+
+    # Construct set_ranges_spec to include --poi-min and --poi-max if provided
+    set_ranges_spec = args.set_parameter_ranges or ""
+    poi_name = getattr(fit_model, "poi_name", None)
+    
+    # Append POI bounds to the ranges spec if provided
+    poi_ranges = []
+    if getattr(args, "poi_min", None) is not None:
+        poi_ranges.append(f"{poi_name}={args.poi_min}")
+    if getattr(args, "poi_max", None) is not None:
+        if poi_ranges:
+            poi_ranges[-1] += f":{args.poi_max}"
+        else:
+            # No poi_min but have poi_max; use a very low lower bound
+            poi_ranges.append(f"{poi_name}=-1e12:{args.poi_max}")
+    if poi_ranges:
+        if set_ranges_spec:
+            set_ranges_spec = f"{set_ranges_spec},{','.join(poi_ranges)}"
+        else:
+            set_ranges_spec = ",".join(poi_ranges)
+
     apply_parameter_overrides(
         fit_model,
         set_values_spec=args.set_parameters,
-        set_ranges_spec=args.set_parameter_ranges,
+        set_ranges_spec=set_ranges_spec,
         freeze_spec=args.freeze_parameters,
     )
 

@@ -1373,8 +1373,34 @@ def _enforce_physical_poi_bounds(workspace, fit_model):
 def run_analysis_cli(args):
     fit_model = _load_analysis_model(model_file=args.model_file, input_card=args.input_card)
 
+    # Construct set_parameter_ranges to include --poi-min and --poi-max if provided
+    set_ranges_spec = getattr(args, "set_parameter_ranges", None) or ""
+    poi_name = getattr(fit_model, "poi_name", None)
+    if poi_name:
+        poi_ranges = []
+        if getattr(args, "poi_min", None) is not None:
+            poi_ranges.append(f"{poi_name}={args.poi_min}")
+        if getattr(args, "poi_max", None) is not None:
+            if poi_ranges:
+                poi_ranges[-1] += f":{args.poi_max}"
+            else:
+                # No poi_min but have poi_max; use a very low lower bound
+                poi_ranges.append(f"{poi_name}=-1e12:{args.poi_max}")
+        if poi_ranges:
+            if set_ranges_spec:
+                set_ranges_spec = f"{set_ranges_spec},{','.join(poi_ranges)}"
+            else:
+                set_ranges_spec = ",".join(poi_ranges)
+    
+    # Temporarily set args.set_parameter_ranges to include POI bounds
+    original_ranges = getattr(args, "set_parameter_ranges", None)
+    args.set_parameter_ranges = set_ranges_spec or None
+
     ws, metadata, model, observed_data = _workspace_objects(fit_model)
     _apply_parameter_overrides(ws, args)
+    
+    # Restore original args value
+    args.set_parameter_ranges = original_ranges
     _enforce_physical_poi_bounds(ws, fit_model)
     obs_var = _resolve_obs_var(observed_data, ws)
     if obs_var is None:

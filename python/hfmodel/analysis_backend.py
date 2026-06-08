@@ -319,6 +319,11 @@ class PyhfAnalysisBackend(AnalysisBackend):
     def get_observed_data(self, state: PyhfAnalysisState) -> np.ndarray:
         return np.asarray(state.fit_model.data, dtype=float)
 
+    def get_current_data(self, state: PyhfAnalysisState) -> np.ndarray:
+        if state.current_data is None:
+            return self.get_observed_data(state)
+        return np.asarray(state.current_data, dtype=float)
+
     def set_data(self, state: PyhfAnalysisState, data: Any) -> None:
         state.current_data = np.asarray(data, dtype=float)
 
