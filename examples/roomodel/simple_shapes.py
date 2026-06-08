@@ -39,9 +39,11 @@ def build_shapes_workspace():
     # Signal: narrow Gaussian at 105
     sig_mu = ROOT.RooRealVar("sig_mu", "sig_mu", 105.0, OBS_MIN, OBS_MAX)
     sig_sigma = ROOT.RooRealVar("sig_sigma", "sig_sigma", 0.35, 0.01, 2.0)
+    sig_mu_offset = ROOT.RooRealVar("sig_mu_offset", "sig_mu_offset", 0., -7., 7.);
     sig_mu.setConstant(True)
     sig_sigma.setConstant(True)
-    sig_pdf = ROOT.RooGaussian("sig", "Signal Gaussian", mass, sig_mu, sig_sigma)
+    sig_mu_eff = ROOT.RooFormulaVar("sig_mu_eff", "@0 + 0.1*@1", ROOT.RooArgList(sig_mu, sig_mu_offset));
+    sig_pdf = ROOT.RooGaussian("sig", "Signal Gaussian", mass, sig_mu_eff, sig_sigma)
 
     # Background: falling exponential
     bkg_lam = ROOT.RooRealVar("bkg_lam", "bkg_lam", -0.25, -3.0, -0.001)

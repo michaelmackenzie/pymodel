@@ -106,7 +106,9 @@ def _data_obs_by_channel(workspace, channel: str):
     ]
     for name in candidates:
         data = workspace.data(name)
-        if data is not None:
+        # cppyy wraps ROOT null pointers as non-None Python objects; use
+        # bool() to trigger the underlying pointer validity check.
+        if data is not None and bool(data):
             return data
     return None
 
@@ -290,7 +292,9 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
         )
 
         src_data = _data_obs_by_channel(src_ws, channel)
-        if src_data is not None:
+        # cppyy wraps ROOT null pointers as non-None Python objects; use
+        # bool() to trigger the underlying validity check.
+        if src_data is not None and bool(src_data):
             try:
                 observed_counts[channel] = float(src_data.sumEntries())
             except Exception:
@@ -441,6 +445,17 @@ def build_model_from_card(card: CardSpec, card_dir: str):
     if signal_processes:
         poi_name = f"mu_{signal_processes[0]}"
 
+    # Count constraints and floating (nuisance) parameters from the card.
+    # Each UncertaintySpec row that has at least one non-"-" value contributes
+    # one constraint (a Gaussian penalty term) and one floating nuisance
+    # parameter.  The POI itself is intentionally excluded from this count.
+    n_constraints = 0
+    for unc in (card.uncertainties or []):
+        active = any(v not in (None, "-", "") for v in unc.values)
+        if active:
+            n_constraints += 1
+    n_floating = n_constraints
+
     metadata = {
         "format": "fit_model_bundle_v1_roomodel",
         "workspace_name": str(ws.GetName()),
@@ -452,6 +467,8 @@ def build_model_from_card(card: CardSpec, card_dir: str):
         "signal_processes": list(signal_processes),
         "observed_counts_by_channel": dict(observed_counts),
         "poi_name": poi_name,
+        "n_constraints": n_constraints,
+        "n_floating": n_floating,
     }
 
     return {

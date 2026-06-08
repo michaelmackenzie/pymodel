@@ -7,10 +7,17 @@
 # Step 3: run analysis:
 #   pymodel roomodel analyze --model-file model.root --toys 50
 
-shapes * * simple_shapes.root
+shapes    *     * simple_shapes.root
 shapes data_obs * simple_shapes.root
 
-bin     demo  demo
-process  sig  bkg
-process  -1    1
-rate     12   800
+observation demo 106
+
+bin                  demo   demo
+process               sig   bkg
+process               -1     1
+rate                  12    800
+		     
+lumi           lnN   1.05   1.05
+dioN           lnN    -     1.02
+		     
+sig_mu_offset shape   1       -
