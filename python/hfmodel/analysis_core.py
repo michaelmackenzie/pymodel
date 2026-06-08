@@ -60,7 +60,11 @@ def _override_vectors(model, fit_model):
 
     for name, bounds in set_ranges.items():
         low, high = bounds
-        par_bounds[index_map[name]] = (float(low), float(high))
+        idx = index_map[name]
+        existing_low, existing_high = par_bounds[idx]
+        effective_low  = float(low)  if low  is not None else float(existing_low)
+        effective_high = float(high) if high is not None else float(existing_high)
+        par_bounds[idx] = (effective_low, effective_high)
 
     for name in freeze_names:
         fixed_params[index_map[name]] = True

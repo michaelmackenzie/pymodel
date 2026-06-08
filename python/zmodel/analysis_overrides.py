@@ -12,7 +12,7 @@ from backends.zfit_parameter_utils import (
 def _resolve_required_parameters(fit_model, required_names):
     params_by_name = {}
     for name in required_names:
-        param, error = _find_parameter_with_error(fit_model, name)
+        param, error = find_parameter_with_error(fit_model, name)
         if param is None:
             raise ValueError(error)
         params_by_name[name] = param
@@ -32,11 +32,14 @@ def apply_parameter_overrides(fit_model, set_values_spec, set_ranges_spec, freez
 
     for name, (low, high) in range_updates.items():
         param = params_by_name[name]
+        # Resolve None to the existing bound so we never pass None to zfit.
+        effective_low  = low  if low  is not None else float(getattr(param, "lower", low))
+        effective_high = high if high is not None else float(getattr(param, "upper", high))
         if hasattr(param, "set_limits"):
-            param.set_limits(low=low, high=high)
+            param.set_limits(low=effective_low, high=effective_high)
         else:
-            param.lower = low
-            param.upper = high
+            param.lower = effective_low
+            param.upper = effective_high
 
     for name in freeze_names:
         param = params_by_name[name]

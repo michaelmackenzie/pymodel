@@ -20,4 +20,4 @@ rate                  12    800
 lumi           lnN   1.05   1.05
 dioN           lnN    -     1.02
 		     
-sig_mu_offset shape   1       -
+sig_mu_offset param 0.0 1.0
