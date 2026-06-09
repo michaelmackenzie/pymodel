@@ -1,26 +1,61 @@
+"""Binned simple-shapes workspace for the hfmodel backend.
+
+The signal is a Gaussian (mu=105, sigma=0.35, yield=12) and the background
+is an Exponential (lam=-0.25, yield=80) over the mass range [100, 110] split
+into 20 uniform bins.  Per-bin expected counts are computed analytically so
+they are identical to those used by the zmodel and roomodel binned examples.
+
+Run from the examples/hfmodel directory:
+    python simple_shapes_binned.py
+"""
 import json
 import numpy as np
+from scipy import special
 
-nbins = 20
-bin_edges = np.linspace(100.0, 110.0, nbins + 1)
-bin_centers = bin_edges[:-1] + (bin_edges[1] - bin_edges[0]) / 2.0
+# ---------------------------------------------------------------------------
+# Binning
+# ---------------------------------------------------------------------------
+NBINS = 20
+OBS_MIN = 100.0
+OBS_MAX = 110.0
+BIN_EDGES = np.linspace(OBS_MIN, OBS_MAX, NBINS + 1)
 
-sig_mu = 105.0
-sig_sigma = 0.35
-sig_yield = 12.0
-bkg_lambda = -0.25
-bkg_yield = 80.0
-RNG_SEED = 12345
+# ---------------------------------------------------------------------------
+# Physics parameters (shared with zmodel / roomodel examples)
+# ---------------------------------------------------------------------------
+SIG_MU    = 105.0
+SIG_SIGMA = 0.35
+BKG_LAM   = -0.25
+SIG_YIELD = 12.0
+BKG_YIELD = 80.0
 
-# Compute signal and background shapes (normalized PDFs)
-sig_shape = np.exp(-((bin_centers - sig_mu) / sig_sigma) ** 2 / 2)
-sig_shape /= sig_shape.sum()
+# Fixed observed counts – identical across all three backends
+OBS_COUNTS = [10, 9, 8, 7, 6, 5, 5, 4, 5, 8, 8, 3, 2, 2, 2, 2, 1, 1, 1, 1]
 
-bkg_shape = np.exp(bkg_lambda * (bin_centers - 100.0))
-bkg_shape /= bkg_shape.sum()
 
-# Use a fixed observed dataset:
-obs_counts = [16, 10,  3,  5,  5,  5,  6,  4,  4, 11,  2,  4,  2,  1,  2,  1,  1,  0,  0,  0]
+def _gauss_bin_frac(lo, hi, mu, sigma):
+    return 0.5 * (special.erf((hi - mu) / (sigma * np.sqrt(2)))
+                - special.erf((lo - mu) / (sigma * np.sqrt(2))))
+
+
+def _exp_bin_frac(lo, hi, lam, total_lo, total_hi):
+    norm = (np.exp(lam * total_lo) - np.exp(lam * total_hi)) / (-lam)
+    return (np.exp(lam * lo) - np.exp(lam * hi)) / (-lam) / norm
+
+
+# Absolute expected counts per bin at nominal signal strength mu=1
+sig_data = np.array([
+    _gauss_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], SIG_MU, SIG_SIGMA) * SIG_YIELD
+    for i in range(NBINS)
+])
+bkg_data = np.array([
+    _exp_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], BKG_LAM, OBS_MIN, OBS_MAX) * BKG_YIELD
+    for i in range(NBINS)
+])
+
+# pyhf requires all template bins to be > 0; clip tiny values
+sig_data = np.clip(sig_data, 1e-6, None)
+bkg_data = np.clip(bkg_data, 1e-6, None)
 
 workspace_dict = {
     "channels": [
@@ -29,21 +64,30 @@ workspace_dict = {
             "samples": [
                 {
                     "name": "sig",
-                    "data": sig_shape.tolist(),
+                    # Absolute expected counts at mu=1; normfactor "mu" scales this
+                    "data": sig_data.tolist(),
                     "modifiers": [
-                        {"name": "mu", "type": "normfactor", "data": None}
+                        {"name": "mu",        "type": "normfactor", "data": None},
+                        {"name": "lumi",      "type": "normsys",
+                         "data": {"hi": 1.05, "lo": 1.0 / 1.05}},
                     ],
                 },
                 {
                     "name": "bkg",
-                    "data": bkg_shape.tolist(),
-                    "modifiers": [],
+                    # Absolute expected counts; no normfactor (bkg is fixed)
+                    "data": bkg_data.tolist(),
+                    "modifiers": [
+                        {"name": "lumi",      "type": "normsys",
+                         "data": {"hi": 1.05, "lo": 1.0 / 1.05}},
+                        {"name": "bkg_norm",  "type": "normsys",
+                         "data": {"hi": 1.10, "lo": 1.0 / 1.10}},
+                    ],
                 },
             ],
         }
     ],
     "observations": [
-        {"name": "demo", "data": obs_counts}
+        {"name": "demo", "data": OBS_COUNTS}
     ],
     "measurements": [
         {
@@ -59,4 +103,5 @@ workspace_dict = {
 
 filename = "simple_shapes_binned_workspace.json"
 with open(filename, "w") as f:
-    json.dump(workspace_dict, f, indent=4)
+    json.dump(workspace_dict, f, indent=2)
+print(f"Wrote workspace: {filename}")

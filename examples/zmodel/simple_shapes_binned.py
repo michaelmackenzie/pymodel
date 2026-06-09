@@ -1,31 +1,77 @@
-import sys
-import pickle
+"""Binned simple-shapes payload for the zmodel backend.
+
+The signal is a Gaussian (mu=105, sigma=0.35, yield=12) and the background
+is an Exponential (lam=-0.25, yield=80) over the mass range [100, 110] split
+into 20 uniform bins.  The normalised per-bin fractions are computed
+analytically (no random sampling) so they are identical to those used by the
+hfmodel and roomodel binned examples.
+
+Run from the examples/zmodel directory:
+    python simple_shapes_binned.py
+"""
 import dill
 import numpy as np
+from scipy import special
 import zfit
 
-nbins = 20
-obs = zfit.Space("mass", limits=(100.0, 110.0), binning=nbins)
+# ---------------------------------------------------------------------------
+# Binning
+# ---------------------------------------------------------------------------
+NBINS = 20
+OBS_MIN = 100.0
+OBS_MAX = 110.0
+BIN_EDGES = np.linspace(OBS_MIN, OBS_MAX, NBINS + 1)
 
-sig_mu = zfit.Parameter("sig_mu", 105.0, 103.0, 107.0)
-sig_sigma = zfit.Parameter("sig_sigma", 0.35, 0.02, 2.0)
-sig_pdf = zfit.pdf.Gauss(obs=obs, mu=sig_mu, sigma=sig_sigma, name="sig_pdf")
+# ---------------------------------------------------------------------------
+# Physics parameters (shared with hfmodel / roomodel examples)
+# ---------------------------------------------------------------------------
+SIG_MU    = 105.0
+SIG_SIGMA = 0.35
+BKG_LAM   = -0.25
+RATES     = {"sig": 12.0, "bkg": 80.0}
 
-bkg_lambda = zfit.Parameter("bkg_lambda", -0.25, -3.0, -0.001)
-bkg_pdf = zfit.pdf.Exponential(obs=obs, lam=bkg_lambda, name="bkg_pdf")
+# Fixed observed counts – computed analytically from expected yields rounded
+# to the nearest integer, identical across all three backends:
+#   bins: [10,9,8,7,6,5,5,4,5,8,8,3,2,2,2,2,1,1,1,1]
+OBS_COUNTS = [10, 9, 8, 7, 6, 5, 5, 4, 5, 8, 8, 3, 2, 2, 2, 2, 1, 1, 1, 1]
 
-RATES = {
-    "sig": 12.0,
-    "bkg": 80.0,
-}
-RNG_SEED = 12345
+# ---------------------------------------------------------------------------
+# Analytic per-bin fractions (normalised PDFs)
+# ---------------------------------------------------------------------------
+def _gauss_bin_frac(lo, hi, mu, sigma):
+    return 0.5 * (special.erf((hi - mu) / (sigma * np.sqrt(2)))
+                - special.erf((lo - mu) / (sigma * np.sqrt(2))))
 
 
-def make_data_obs():
-    # Use a fixed observed dataset:
-    obs_counts = [16, 10,  3,  5,  5,  5,  6,  4,  4, 11,  2,  4,  2,  1,  2,  1,  1,  0,  0,  0]
-    return obs_counts
+def _exp_bin_frac(lo, hi, lam, total_lo, total_hi):
+    norm = (np.exp(lam * total_lo) - np.exp(lam * total_hi)) / (-lam)
+    return (np.exp(lam * lo) - np.exp(lam * hi)) / (-lam) / norm
 
+
+SIG_FRACS = np.array([
+    _gauss_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], SIG_MU, SIG_SIGMA)
+    for i in range(NBINS)
+])
+BKG_FRACS = np.array([
+    _exp_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], BKG_LAM, OBS_MIN, OBS_MAX)
+    for i in range(NBINS)
+])
+
+# ---------------------------------------------------------------------------
+# zfit PDFs (unbinned; zmodel converts to binned internally via --fit-mode binned)
+# ---------------------------------------------------------------------------
+obs = zfit.Space("mass", limits=(OBS_MIN, OBS_MAX))
+
+sig_mu_param    = zfit.Parameter("sig_mu",    SIG_MU,    103.0, 107.0)
+sig_sigma_param = zfit.Parameter("sig_sigma", SIG_SIGMA,  0.02,   2.0)
+sig_pdf = zfit.pdf.Gauss(obs=obs, mu=sig_mu_param, sigma=sig_sigma_param, name="sig_pdf")
+
+bkg_lambda_param = zfit.Parameter("bkg_lambda", BKG_LAM, -3.0, -0.001)
+bkg_pdf = zfit.pdf.Exponential(obs=obs, lam=bkg_lambda_param, name="bkg_pdf")
+
+# ---------------------------------------------------------------------------
+# Payload
+# ---------------------------------------------------------------------------
 
 def make_shape_payload():
     return {
@@ -34,8 +80,12 @@ def make_shape_payload():
             "bkg": bkg_pdf,
         },
         "rates": dict(RATES),
+        # data_obs stores per-bin counts together with the bin edges so that
+        # zmodel can reconstruct pseudo-events at bin centers for the unbinned
+        # likelihood, or use counts directly for a binned likelihood.
         "data_obs": {
-            "values": make_data_obs(),
+            "values": list(OBS_COUNTS),
+            "bin_edges": BIN_EDGES.tolist(),
         },
     }
 
@@ -44,8 +94,7 @@ def write_shape_payload(output_file="simple_shapes_binned.pkl"):
     payload = make_shape_payload()
     with open(output_file, "wb") as handle:
         dill.dump(payload, handle)
-    sys.stdout.write(f"Wrote shape payload: {output_file}\n")
-    sys.stdout.flush()
+    print(f"Wrote shape payload: {output_file}")
 
 
 if __name__ == "__main__":

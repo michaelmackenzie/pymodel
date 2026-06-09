@@ -1460,6 +1460,18 @@ def run_analysis_cli(args):
         summary["dataset_id"] = 0
         summary["observed_fit"] = True
         summaries.append(summary)
+
+        poi_name = summary.get("poi_name") or "POI"
+        poi_fit = summary.get("poi_fit")
+        poi_unc = summary.get("poi_unc_hesse")
+        valid = summary.get("valid", False)
+        status = "valid  " if valid else "invalid"
+        if poi_fit is None:
+            print(f"Observed data: {status}, {poi_name}=n/a        +- n/a")
+        elif poi_unc is None:
+            print(f"Observed data: {status}, {poi_name}={float(poi_fit):<10.6g} +- n/a")
+        else:
+            print(f"Observed data: {status}, {poi_name}={float(poi_fit):<10.6g} +- {float(poi_unc):<10.6g}")
     elif use_asimov_data:
         _restore_parameter_state(ws, nominal_param_state)
         ROOT = _get_root()

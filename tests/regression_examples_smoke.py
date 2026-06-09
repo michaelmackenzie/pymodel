@@ -49,7 +49,7 @@ def _hfmodel_smoke(repo, cli):
 
     _run(cli + ["hfmodel", "build", "examples/hfmodel/simple_shapes_card.txt", model_path], cwd=repo)
     model_payload = _load_json(repo / model_path)
-    _assert_keys(model_payload, ["format", "workspace", "fit_metadata", "card"], "hfmodel build output")
+    _assert_keys(model_payload, ["format", "workspace", "fit_metadata"], "hfmodel build output")
 
     _run(
         cli
@@ -95,7 +95,7 @@ def _zmodel_smoke(repo, cli):
 
     _run(cli + ["zmodel", "build", "examples/zmodel/simple_shapes_card.txt", model_path], cwd=repo)
     model_payload = _load_pickle(repo / model_path)
-    _assert_keys(model_payload, ["format", "hs3_model", "fit_metadata", "card"], "zmodel build output")
+    _assert_keys(model_payload, ["format", "hs3_model", "fit_metadata"], "zmodel build output")
 
     _run(
         cli

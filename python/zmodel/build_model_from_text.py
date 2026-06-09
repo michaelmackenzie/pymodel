@@ -114,6 +114,20 @@ def _coerce_unbinned_data_obs(obs_space, payload):
     if hasattr(payload, "space") and (hasattr(payload, "value") or hasattr(payload, "values")):
         return payload
 
+    # When the payload is a dict with both "values" (bin counts) and "bin_edges",
+    # expand the counts into pseudo-event positions at each bin center so the
+    # unbinned zfit loss sees the correct number of events in the correct range.
+    if isinstance(payload, dict) and "values" in payload and "bin_edges" in payload:
+        counts = np.maximum(np.rint(np.asarray(payload["values"], dtype=float)).astype(int), 0)
+        edges = np.asarray(payload["bin_edges"], dtype=float)
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        if len(centers) != len(counts):
+            raise ValueError(
+                f"data_obs: bin_edges implies {len(centers)} bins but values has {len(counts)} entries"
+            )
+        expanded = np.repeat(centers, counts).reshape(-1, 1)
+        return zfit.Data.from_numpy(obs=obs_space, array=expanded)
+
     if isinstance(payload, dict) and "values" in payload:
         payload = payload["values"]
 
@@ -763,10 +777,11 @@ def build_and_save_model_from_card_file(input_card: str, output_file: str) -> st
     card = parse_model_card(card_path)
     fit_model = build_model_from_card(card, card_dir)
 
-    # Always include observed data in the bundle if present
-    # For counting models this is the summed observed count across categories.
-    if card.is_counting and card.observations:
-        fit_model.data = float(sum(card.observations.values()))
+    # Note: observed data is already set in build_model_from_card for all model types:
+    # - For counting models: a float summed count
+    # - For unbinned/binned models: zfit.Data or dict of zfit.Data objects
+    # The build_model_from_card function handles loading observed data from
+    # card.data_obs_files and storing it in fit_model.data
 
     output_path = os.path.abspath(output_file)
     save_fit_model_bundle(fit_model, output_path)  # card parameter ignored since hs3 is self-contained

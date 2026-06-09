@@ -67,6 +67,9 @@ class ZfitAnalysisState:
     current_data: Any = None
     current_loss: Any = None
 
+    # Observed data in proper format (binned/unbinned based on fit mode)
+    observed_data: Any = None
+    
     # Metadata propagated from fit_model
     _signal_nominal_yield: Optional[float] = field(default=None, repr=False)
     _poi_is_signal_strength: bool = field(default=True, repr=False)
@@ -229,6 +232,10 @@ class ZfitAnalysisBackend(AnalysisBackend):
         return data
 
     def get_observed_data(self, state: ZfitAnalysisState) -> Any:
+        # Return the properly formatted observed data (binned/unbinned based on fit mode)
+        # If available, use the pre-formatted observed data; otherwise fall back to raw model data
+        if state.observed_data is not None:
+            return state.observed_data
         return state.fit_model.data
 
     def get_current_data(self, state: ZfitAnalysisState) -> Any:

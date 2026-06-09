@@ -141,6 +141,17 @@ def _build_binned_space(fit_model, bins):
     if is_likely_counting_model(fit_model):
         return _build_counting_binned_space(fit_model)
 
+    # Check if there's stored binned edge information from the original data
+    channels = getattr(fit_model, "channels", []) or []
+    binned_edges_by_channel = getattr(fit_model, "_binned_edges_by_channel", {}) or {}
+    if len(channels) == 1 and channels[0] in binned_edges_by_channel:
+        channel = channels[0]
+        edges = binned_edges_by_channel[channel]
+        obs_name = getattr(fit_model.obs, "obs", None)
+        if obs_name and len(obs_name) > 0:
+            binning = zfit.binned.VariableBinning(edges, name=obs_name[0])
+            return zfit.Space(obs_name[0], binning=binning)
+
     obs_names = getattr(fit_model.obs, "obs", None)
     if not obs_names or len(obs_names) != 1:
         raise ValueError("Binned fits currently support only 1D observables")
@@ -408,6 +419,11 @@ def _build_asimov_binned_data(binned_model, binned_space, fit_model):
 # Loss construction
 # ===========================================================================
 
+def _is_model_extended(model):
+    """Check if a model is extended (has a yield)."""
+    return getattr(model, 'is_extended', False)
+
+
 def _build_loss(fit_model, resolved_fit_mode, binned_model, data):
     channel_models = _channel_models(fit_model)
 
@@ -423,32 +439,61 @@ def _build_loss(fit_model, resolved_fit_mode, binned_model, data):
             if resolved_fit_mode == "binned":
                 if not isinstance(binned_model, dict) or channel not in binned_model:
                     raise ValueError(f"Missing binned model for channel '{channel}'")
-                loss = zfit.loss.ExtendedBinnedNLL(
-                    model=binned_model[channel],
-                    data=data[channel],
-                    constraints=constraints,
-                )
+                binned_channel_model = binned_model[channel]
+                if _is_model_extended(binned_channel_model):
+                    loss = zfit.loss.ExtendedBinnedNLL(
+                        model=binned_channel_model,
+                        data=data[channel],
+                        constraints=constraints,
+                    )
+                else:
+                    loss = zfit.loss.BinnedNLL(
+                        model=binned_channel_model,
+                        data=data[channel],
+                        constraints=constraints,
+                    )
             else:
-                loss = zfit.loss.ExtendedUnbinnedNLL(
-                    model=model,
-                    data=data[channel],
-                    constraints=constraints,
-                )
+                if _is_model_extended(model):
+                    loss = zfit.loss.ExtendedUnbinnedNLL(
+                        model=model,
+                        data=data[channel],
+                        constraints=constraints,
+                    )
+                else:
+                    loss = zfit.loss.UnbinnedNLL(
+                        model=model,
+                        data=data[channel],
+                        constraints=constraints,
+                    )
             combined_loss = loss if combined_loss is None else combined_loss + loss
         return combined_loss
 
     if resolved_fit_mode == "binned":
-        return zfit.loss.ExtendedBinnedNLL(
-            model=binned_model,
+        if _is_model_extended(binned_model):
+            return zfit.loss.ExtendedBinnedNLL(
+                model=binned_model,
+                data=data,
+                constraints=fit_model.constraints,
+            )
+        else:
+            return zfit.loss.BinnedNLL(
+                model=binned_model,
+                data=data,
+                constraints=fit_model.constraints,
+            )
+
+    if _is_model_extended(fit_model.model):
+        return zfit.loss.ExtendedUnbinnedNLL(
+            model=fit_model.model,
             data=data,
             constraints=fit_model.constraints,
         )
-
-    return zfit.loss.ExtendedUnbinnedNLL(
-        model=fit_model.model,
-        data=data,
-        constraints=fit_model.constraints,
-    )
+    else:
+        return zfit.loss.UnbinnedNLL(
+            model=fit_model.model,
+            data=data,
+            constraints=fit_model.constraints,
+        )
 
 
 # ===========================================================================
@@ -823,6 +868,7 @@ def run_analysis(
         poi_param=poi_param,
         current_data=initial_data,
         current_loss=initial_loss,
+        observed_data=initial_data if data_mode == "observed" else None,
         _signal_nominal_yield=fit_model.signal_nominal_yield,
         _poi_is_signal_strength=poi_is_ss,
     )

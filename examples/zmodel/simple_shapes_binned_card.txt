@@ -1,0 +1,25 @@
+# Binned example model card for the zmodel backend.
+#
+# Signal: Gaussian(mu=105, sigma=0.35), yield=12
+# Background: Exponential(lam=-0.25), yield=80
+# Observable: mass in [100, 110], 20 uniform bins
+# Observed counts are identical to the hfmodel and roomodel binned examples.
+#
+# Step 1: generate the shapes payload:
+#   cd examples/zmodel && python simple_shapes_binned.py
+# Step 2: build the model:
+#   pymodel zmodel build simple_shapes_binned_card.txt model_binned.pkl
+# Step 3: run the analysis (binned fit over the histogram):
+#   pymodel zmodel analyze -m model_binned.pkl --fit-mode binned
+
+shapes * * simple_shapes_binned.pkl
+shapes data_obs * simple_shapes_binned.pkl
+
+bin demo demo
+process sig bkg
+process  -1  1
+rate     12 80
+
+# Rate-only uncertainties (no shape systematics)
+lumi      lnN  1.05  1.05
+bkg_norm  lnN   -    1.10

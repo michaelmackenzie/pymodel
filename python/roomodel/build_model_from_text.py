@@ -437,7 +437,46 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
             sim_pdf.addPdf(model_pdf, channel)
         getattr(ws, "import")(sim_pdf, ROOT.RooFit.RecycleConflictNodes())
 
-    return ws, "simPdf", None, observed_counts, signal_processes
+    # Import data_obs from the shape file(s) into the output workspace so
+    # that analyze can load it as observed data instead of generating a toy.
+    # The PDFs were imported with RenameAllVariables(channel), so the observable
+    # inside the output workspace is named mass_{channel}, not mass.  Build a
+    # new RooDataHist using the renamed observable and the bin contents from
+    # the source data_obs.
+    data_name = None
+    for channel in card.channels:
+        ch_info = by_channel[channel]
+        obs_name_orig = ch_info.get("obs_name")
+        if obs_name_orig is None:
+            continue
+        obs_name_renamed = f"{obs_name_orig}_{channel}"
+        renamed_obs = ws.var(obs_name_renamed)
+        if renamed_obs is None or not bool(renamed_obs):
+            continue
+        for root_path in shapes_cache:
+            src_ws = shapes_cache[root_path]
+            src_data = _data_obs_by_channel(src_ws, channel)
+            if src_data is None or not bool(src_data):
+                src_data = src_ws.data("data_obs")
+            if src_data is None or not bool(src_data):
+                continue
+            # Use the source observable (same range/binning) to create the TH1,
+            # then construct a new RooDataHist bound to the renamed observable.
+            src_obs = src_ws.var(obs_name_orig)
+            if src_obs is None or not bool(src_obs):
+                continue
+            th1 = src_data.createHistogram("_data_obs_tmp_th1", src_obs)
+            if th1 is None or not bool(th1):
+                continue
+            arg_list = ROOT.RooArgList(renamed_obs)
+            rebound = ROOT.RooDataHist("data_obs", "Observed data", arg_list, th1)
+            getattr(ws, "import")(rebound)
+            data_name = "data_obs"
+            break
+        if data_name is not None:
+            break
+
+    return ws, "simPdf", data_name, observed_counts, signal_processes
 
 
 def build_model_from_card(card: CardSpec, card_dir: str):
