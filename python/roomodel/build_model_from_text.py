@@ -161,6 +161,164 @@ def _channel_rate_split(card: CardSpec, channel: str, signal_processes: List[str
     return sig_rate, bkg_rate
 
 
+def _build_lnn_constraints(ws, card, process_names, bin_names, yield_var_names):
+    """Build lnN/gs nuisance parameters, constraint PDFs, and scale factors.
+
+    For each active uncertainty row in the card:
+      - Create a floating nuisance parameter ``theta_<name>`` (range -7..7, init 0).
+      - Create a ``RooGaussian`` constraint PDF ``constraint_<name>`` (mean=0, sigma=1).
+      - For each (process, channel) pair with a non-"-" value, replace the existing
+        yield variable in *yield_var_names* with a ``RooFormulaVar`` that scales the
+        nominal yield by the appropriate factor.
+
+    Parameters
+    ----------
+    ws : RooWorkspace
+        The workspace being built (modified in-place).
+    card : CardSpec
+        Parsed model card.
+    process_names : list[str]
+        Process names in card column order.
+    bin_names : list[str]
+        Channel names in card column order (parallel to process_names).
+    yield_var_names : dict[tuple[str,str], str]
+        Mapping (process, channel) -> name of the nominal yield object in *ws*.
+        This dict is updated in-place: constrained yields get new names.
+
+    Returns
+    -------
+    list[str]
+        Names of the constraint PDFs imported into *ws*.
+    """
+    ROOT = _get_root()
+    from backends.builder_common import kind_token
+
+    constraint_pdf_names = []
+
+    for unc in (card.uncertainties or []):
+        kind = kind_token(unc.kind)
+        if kind not in ("lnN", "gs"):
+            # shape uncertainties not supported in counting/shape workspaces yet
+            continue
+
+        # Check if at least one process/channel is affected
+        active_indices = [
+            i for i, v in enumerate(unc.values)
+            if v not in (None, "-", "")
+        ]
+        if not active_indices:
+            continue
+
+        # 1. Create floating nuisance parameter theta ~ Gauss(0,1)
+        theta_name = f"theta_{unc.name}"
+        theta = ROOT.RooRealVar(theta_name, theta_name, 0.0, -7.0, 7.0)
+        theta.setVal(0.0)
+        getattr(ws, "import")(theta)
+        theta_ws = ws.var(theta_name)
+
+        # 2. Create Gaussian constraint PDF for theta: Gauss(theta | 0, 1)
+        mean_name = f"constraint_mean_{unc.name}"
+        sigma_name = f"constraint_sigma_{unc.name}"
+        mean_var = ROOT.RooRealVar(mean_name, mean_name, 0.0)
+        mean_var.setConstant(True)
+        # Give sigma a finite positive range to suppress RooFit range warnings.
+        sigma_var = ROOT.RooRealVar(sigma_name, sigma_name, 1.0, 1e-6, 100.0)
+        sigma_var.setConstant(True)
+        getattr(ws, "import")(mean_var)
+        getattr(ws, "import")(sigma_var)
+        constraint_name = f"constraint_{unc.name}"
+        constraint_pdf = ROOT.RooGaussian(
+            constraint_name, constraint_name,
+            theta_ws,
+            ws.var(mean_name),
+            ws.var(sigma_name),
+        )
+        getattr(ws, "import")(constraint_pdf)
+        constraint_pdf_names.append(constraint_name)
+
+        # 3. Scale each affected yield by the constraint factor
+        for i in active_indices:
+            process = process_names[i]
+            channel = bin_names[i]
+            raw_value = unc.values[i]
+            try:
+                kappa = float(raw_value)
+            except (TypeError, ValueError):
+                continue
+
+            key = (process, channel)
+            nominal_yield_name = yield_var_names.get(key)
+            if nominal_yield_name is None:
+                continue
+
+            nominal_obj = ws.function(nominal_yield_name) or ws.var(nominal_yield_name)
+            if nominal_obj is None:
+                continue
+
+            scaled_name = f"yield_scaled_{unc.name}_{process}__{channel}"
+
+            if kind == "lnN":
+                # Scaled yield = nominal * kappa^theta
+                log_kappa = float(np.log(kappa)) if kappa > 0 else 0.0
+                log_kappa_var_name = f"log_kappa_{unc.name}_{process}__{channel}"
+                log_kappa_var = ROOT.RooRealVar(log_kappa_var_name, log_kappa_var_name, log_kappa)
+                log_kappa_var.setConstant(True)
+                getattr(ws, "import")(log_kappa_var)
+                # formula: nominal * exp(log_kappa * theta)
+                # @0 = nominal_yield, @1 = log_kappa, @2 = theta
+                scaled = ROOT.RooFormulaVar(
+                    scaled_name, scaled_name,
+                    "@0*exp(@1*@2)",
+                    ROOT.RooArgList(nominal_obj, ws.var(log_kappa_var_name), theta_ws),
+                )
+            else:
+                # gs: scaled yield = nominal * max(0, 1 + sigma*theta)
+                # sigma = kappa - 1 (for kappa >= 1), or kappa (for kappa < 1)
+                sigma_val = kappa - 1.0 if kappa >= 1.0 else kappa
+                sigma_const_name = f"gs_sigma_{unc.name}_{process}__{channel}"
+                sigma_const = ROOT.RooRealVar(sigma_const_name, sigma_const_name, sigma_val)
+                sigma_const.setConstant(True)
+                getattr(ws, "import")(sigma_const)
+                # formula: nominal * max(0, 1 + sigma*theta)
+                scaled = ROOT.RooFormulaVar(
+                    scaled_name, scaled_name,
+                    "@0*max(0.0, 1.0+@1*@2)",
+                    ROOT.RooArgList(nominal_obj, ws.var(sigma_const_name), theta_ws),
+                )
+
+            getattr(ws, "import")(scaled, ROOT.RooFit.RecycleConflictNodes())
+            # Update the mapping so downstream code picks up the constrained yield
+            yield_var_names[key] = scaled_name
+
+    return constraint_pdf_names
+
+
+def _wrap_with_constraints(ws, sim_pdf_name, constraint_pdf_names):
+    """Replace simPdf in ws with simPdf * prod(constraints) as 'constrainedPdf'.
+
+    Returns the name of the final PDF to use as the model.
+    """
+    ROOT = _get_root()
+    if not constraint_pdf_names:
+        return sim_pdf_name
+
+    sim_pdf = ws.pdf(sim_pdf_name)
+    if sim_pdf is None:
+        raise ValueError(f"Missing '{sim_pdf_name}' in workspace")
+
+    pdf_list = ROOT.RooArgList()
+    pdf_list.add(sim_pdf)
+    for cname in constraint_pdf_names:
+        cpdf = ws.pdf(cname)
+        if cpdf is None:
+            raise ValueError(f"Missing constraint PDF '{cname}'")
+        pdf_list.add(cpdf)
+
+    constrained = ROOT.RooProdPdf("constrainedPdf", "constrainedPdf", pdf_list)
+    getattr(ws, "import")(constrained, ROOT.RooFit.RecycleConflictNodes())
+    return "constrainedPdf"
+
+
 def _build_counting_workspace(card: CardSpec):
     ROOT = _get_root()
     ws = ROOT.RooWorkspace("workspace")
@@ -174,6 +332,9 @@ def _build_counting_workspace(card: CardSpec):
     ))
     poi = _make_signal_strength_var(ws, signal_processes, mu_min=_physical_mu_min_from_card(card, signal_processes))
 
+    # nominal yield names keyed by (process, channel) – needed for constraint wiring
+    yield_var_names: Dict[Tuple[str, str], str] = {}
+
     for channel in card.channels:
         # Counting observable is an event count; keep it in a wide non-negative range.
         obs = _make_obs_var(f"count_obs_{channel}", 0.0, 1.0e6)
@@ -182,31 +343,73 @@ def _build_counting_workspace(card: CardSpec):
         sig_rate, bkg_rate = _channel_rate_split(card, channel, signal_processes)
         total_rate = sig_rate + bkg_rate
 
-        if poi is not None:
-            sig_rate_const = ROOT.RooConstVar(f"sig_rate__{channel}", f"sig_rate__{channel}", float(sig_rate))
-            bkg_rate_const = ROOT.RooConstVar(f"bkg_rate__{channel}", f"bkg_rate__{channel}", float(bkg_rate))
-            expected = ROOT.RooFormulaVar(
-                f"yield_total__{channel}",
-                "@0*@1 + @2",
-                ROOT.RooArgList(poi, sig_rate_const, bkg_rate_const),
-            )
-        else:
-            expected = ROOT.RooConstVar(f"yield_total__{channel}", f"yield_total__{channel}", float(total_rate))
-
-        channel_pdf = ROOT.RooPoisson(
-            f"pdf_total__{channel}",
-            f"pdf_total__{channel}",
-            obs,
-            expected,
-        )
-        getattr(ws, "import")(channel_pdf, ROOT.RooFit.RecycleConflictNodes())
-        channel_model_names.append(f"pdf_total__{channel}")
+        # Build per-process yield variables so constraints can scale them individually
+        for process, pid, bin_name, rate in zip(
+            card.process_names, card.process_ids, card.bin_names, card.rates
+        ):
+            if bin_name != channel:
+                continue
+            rate_val = float(rate or 0.0)
+            is_signal = int(pid) <= 0
+            yield_name = f"yield_{process}__{channel}"
+            if is_signal and poi is not None:
+                nom_rate_name = f"nom_rate_{process}__{channel}"
+                nom_rate = ROOT.RooRealVar(nom_rate_name, nom_rate_name, rate_val)
+                nom_rate.setConstant(True)
+                getattr(ws, "import")(nom_rate)
+                term_yield = ROOT.RooFormulaVar(
+                    yield_name, yield_name, "@0*@1",
+                    ROOT.RooArgList(poi, ws.var(nom_rate_name)),
+                )
+            else:
+                term_yield = ROOT.RooRealVar(yield_name, yield_name, rate_val, -1.0e12, 1.0e12)
+                term_yield.setConstant(True)
+            getattr(ws, "import")(term_yield, ROOT.RooFit.RecycleConflictNodes())
+            yield_var_names[(process, channel)] = yield_name
 
         obs_val = float(card.observations.get(channel, card.observation_count or 0.0))
         observed_counts[channel] = obs_val
         ws_obs = ws.var(f"count_obs_{channel}")
         if ws_obs is not None and bool(ws_obs):
             ws_obs.setVal(obs_val)
+
+    # Apply lnN/gs constraints (updates yield_var_names in-place)
+    constraint_pdf_names = _build_lnn_constraints(
+        ws, card, card.process_names, card.bin_names, yield_var_names
+    )
+
+    # Build per-channel total-yield formula and Poisson PDF using (possibly scaled) yields
+    for channel in card.channels:
+        yields_in_channel = []
+        for process, bin_name in zip(card.process_names, card.bin_names):
+            if bin_name != channel:
+                continue
+            yname = yield_var_names.get((process, channel))
+            if yname is None:
+                continue
+            yobj = ws.function(yname) or ws.var(yname)
+            if yobj is not None:
+                yields_in_channel.append(yobj)
+
+        if not yields_in_channel:
+            raise ValueError(f"No yields resolved for counting channel '{channel}'")
+
+        total_yield_list = ROOT.RooArgList()
+        for y in yields_in_channel:
+            total_yield_list.add(y)
+        expected = ROOT.RooAddition(
+            f"yield_total__{channel}", f"yield_total__{channel}", total_yield_list
+        )
+        getattr(ws, "import")(expected, ROOT.RooFit.RecycleConflictNodes())
+
+        obs_var = ws.var(f"count_obs_{channel}")
+        expected_obj = ws.function(f"yield_total__{channel}") or ws.var(f"yield_total__{channel}")
+        channel_pdf = ROOT.RooPoisson(
+            f"pdf_total__{channel}", f"pdf_total__{channel}",
+            obs_var, expected_obj,
+        )
+        getattr(ws, "import")(channel_pdf, ROOT.RooFit.RecycleConflictNodes())
+        channel_model_names.append(f"pdf_total__{channel}")
 
     channel_models = ROOT.RooArgList()
     for model_name in channel_model_names:
@@ -218,7 +421,8 @@ def _build_counting_workspace(card: CardSpec):
     sim_pdf = ROOT.RooProdPdf("simPdf", "simPdf", channel_models)
     getattr(ws, "import")(sim_pdf, ROOT.RooFit.RecycleConflictNodes())
 
-    return ws, "simPdf", None, observed_counts, signal_processes
+    final_pdf_name = _wrap_with_constraints(ws, "simPdf", constraint_pdf_names)
+    return ws, final_pdf_name, None, observed_counts, signal_processes
 
 
 def _resolve_shape_terms(card: CardSpec, card_dir: str) -> List[Tuple[str, str, str]]:
@@ -305,13 +509,17 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
             except Exception:
                 pass
 
-    channel_model_names = []
+    # --- Pass 1: import all shape PDFs and build nominal yield variables ---
+    # Track the PDF name and nominal yield name per (process, channel).
+    # yield_var_names will be updated by _build_lnn_constraints to point at
+    # the scaled yield objects for any constrained processes.
+    yield_var_names: Dict[Tuple[str, str], str] = {}
+    shape_pdf_names: Dict[Tuple[str, str], str] = {}  # (process,channel) -> imported pdf name
+
     for channel in card.channels:
         channel_info = by_channel[channel]
         if channel_info["min"] is None or channel_info["max"] is None or not channel_info["terms"]:
             raise ValueError(f"No terms for channel '{channel}'")
-        ch_pdf_list = ROOT.RooArgList()
-        ch_yield_total_objs = []
 
         sig_rate_total = 0.0
         bkg_rate_total = 0.0
@@ -332,10 +540,7 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
             imported_pdf_name = f"{src_pdf_name}_{term_suffix}"
             term_pdf = ws.pdf(imported_pdf_name)
             if term_pdf is None or not bool(term_pdf):
-                getattr(
-                    ws,
-                    "import",
-                )(
+                getattr(ws, "import")(
                     src_pdf,
                     ROOT.RooFit.RenameAllNodes(term_suffix),
                     ROOT.RooFit.RenameAllVariables(term_suffix),
@@ -343,6 +548,8 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
                 term_pdf = ws.pdf(imported_pdf_name)
             if term_pdf is None or not bool(term_pdf):
                 raise ValueError(f"Failed to import shape PDF '{src_pdf_name}' for channel '{channel}'")
+
+            shape_pdf_names[(process, channel)] = imported_pdf_name
 
             yield_name = f"yield_{process}__{channel}"
             if process in signal_set and poi is not None:
@@ -374,14 +581,7 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
                 getattr(ws, "import")(term_yield)
                 bkg_rate_total += rate_val
 
-            term_yield_obj = ws.function(yield_name)
-            if term_yield_obj is None:
-                term_yield_obj = ws.var(yield_name)
-            if term_yield_obj is None:
-                raise ValueError(f"Failed to resolve yield object '{yield_name}'")
-
-            ch_pdf_list.add(term_pdf)
-            ch_yield_total_objs.append(term_yield_obj)
+            yield_var_names[(process, channel)] = yield_name
 
         sig_rate_const = ROOT.RooRealVar(f"sig_rate__{channel}", f"sig_rate__{channel}", sig_rate_total, -1.0e12, 1.0e12)
         bkg_rate_const = ROOT.RooRealVar(f"bkg_rate__{channel}", f"bkg_rate__{channel}", bkg_rate_total, -1.0e12, 1.0e12)
@@ -390,19 +590,47 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
         getattr(ws, "import")(sig_rate_const)
         getattr(ws, "import")(bkg_rate_const)
 
+    # --- Pass 2: apply lnN/gs constraints (updates yield_var_names in-place) ---
+    constraint_pdf_names = _build_lnn_constraints(
+        ws, card, card.process_names, card.bin_names, yield_var_names
+    )
+
+    # --- Pass 3: build per-channel RooAddPdf using (possibly scaled) yields ---
+    channel_model_names = []
+    for channel in card.channels:
+        channel_info = by_channel[channel]
+        ch_pdf_list = ROOT.RooArgList()
+        ch_yield_total_objs = []
+
+        for term in channel_info["terms"]:
+            process = term["process"]
+            imported_pdf_name = shape_pdf_names[(process, channel)]
+            term_pdf = ws.pdf(imported_pdf_name)
+            if term_pdf is None or not bool(term_pdf):
+                raise ValueError(f"Cannot find imported PDF '{imported_pdf_name}'")
+
+            yname = yield_var_names.get((process, channel))
+            if yname is None:
+                raise ValueError(f"No yield resolved for process '{process}' channel '{channel}'")
+            yobj = ws.function(yname) or ws.var(yname)
+            if yobj is None:
+                raise ValueError(f"Failed to resolve yield object '{yname}'")
+
+            ch_pdf_list.add(term_pdf)
+            ch_yield_total_objs.append(yobj)
+
         if not ch_yield_total_objs:
             raise ValueError(f"No yields resolved for channel '{channel}'")
 
         total_yield_list = ROOT.RooArgList()
         for y in ch_yield_total_objs:
             total_yield_list.add(y)
-        total_yield = ROOT.RooAddition(
+        ROOT.RooAddition(
             f"yield_total__{channel}",
             f"yield_total__{channel}",
             total_yield_list,
         )
 
-        n_terms = int(ch_pdf_list.getSize())
         coeff_list = ROOT.RooArgList()
         for coeff in ch_yield_total_objs:
             coeff_list.add(coeff)
@@ -476,7 +704,8 @@ def _build_shape_workspace(card: CardSpec, card_dir: str):
         if data_name is not None:
             break
 
-    return ws, "simPdf", data_name, observed_counts, signal_processes
+    final_pdf_name = _wrap_with_constraints(ws, "simPdf", constraint_pdf_names)
+    return ws, final_pdf_name, data_name, observed_counts, signal_processes
 
 
 def build_model_from_card(card: CardSpec, card_dir: str):

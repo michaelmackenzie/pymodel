@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import zfit
 from backends.analyze_plotting_common import (
     plot_delta_nll_scan as _plot_delta_nll_scan_common,
     plot_hist as _plot_hist_common,
@@ -111,6 +112,12 @@ def _component_counts_by_channel(fit_model, edges, channel):
     signal = np.zeros(len(edges) - 1, dtype=float)
     background = np.zeros(len(edges) - 1, dtype=float)
     term_channels = getattr(fit_model, "term_channels", {}) or {}
+    
+    # Extract signal process name, handling term names like "sig__demo"
+    signal_process = getattr(fit_model, "signal_process", None)
+    signal_process_name = None
+    if signal_process is not None:
+        signal_process_name = _term_process_name(fit_model, signal_process)
 
     for term_name, shape in getattr(fit_model, "shapes", {}).items():
         if term_name not in getattr(fit_model, "yields", {}):
@@ -123,10 +130,60 @@ def _component_counts_by_channel(fit_model, edges, channel):
         comp = _binned_component_counts(shape, fit_model.yields[term_name].value(), edges)
         total = total + comp
         process = _term_process_name(fit_model, term_name)
-        if getattr(fit_model, "signal_process", None) is not None and process == fit_model.signal_process:
+        if signal_process_name is not None and process == signal_process_name:
             signal = signal + comp
         else:
             background = background + comp
+
+    # for i in range(len(edges) - 1):
+    #     print(f'{edges[i]} - {edges[i+1]}: {total[i]:.3f} {signal[i]:.3f} {background[i]:.3f}')
+    return total, signal, background
+
+
+def _component_integrals_by_bin(fit_model, bin_edges, channel):
+    """Compute PDF integrals within each bin for histogram-style plotting."""
+    n_bins = len(bin_edges) - 1
+    total = np.zeros(n_bins, dtype=float)
+    signal = np.zeros(n_bins, dtype=float)
+    background = np.zeros(n_bins, dtype=float)
+    term_channels = getattr(fit_model, "term_channels", {}) or {}
+    
+    # Extract signal process name, handling term names like "sig__demo"
+    signal_process = getattr(fit_model, "signal_process", None)
+    signal_process_name = None
+    if signal_process is not None:
+        signal_process_name = _term_process_name(fit_model, signal_process)
+
+    for term_name, shape in getattr(fit_model, "shapes", {}).items():
+        if term_name not in getattr(fit_model, "yields", {}):
+            continue
+
+        term_channel = term_channels.get(term_name)
+        if channel is not None and term_channel is not None and term_channel != channel:
+            continue
+
+        yield_val = float(fit_model.yields[term_name].value())
+        
+        # For each bin, integrate the PDF over the bin
+        for i, (lo, hi) in enumerate(zip(bin_edges[:-1], bin_edges[1:])):
+            bin_width = hi - lo
+            # Approximate integral using multiple sample points within the bin
+            n_samples = max(10, int(bin_width * 10))
+            x_samples = np.linspace(lo, hi, n_samples)
+            try:
+                density = np.asarray(shape.pdf(x_samples), dtype=float).reshape(-1)
+                # Trapezoidal rule for integration
+                integral = np.trapz(density, x_samples)
+                comp_val = integral * yield_val
+            except Exception:
+                comp_val = 0.0
+            
+            total[i] += comp_val
+            process = _term_process_name(fit_model, term_name)
+            if signal_process_name is not None and process == signal_process_name:
+                signal[i] += comp_val
+            else:
+                background[i] += comp_val
 
     return total, signal, background
 
@@ -136,6 +193,12 @@ def _component_curve_by_channel(fit_model, x_plot, bin_width, channel):
     signal = np.zeros(len(x_plot), dtype=float)
     background = np.zeros(len(x_plot), dtype=float)
     term_channels = getattr(fit_model, "term_channels", {}) or {}
+    
+    # Extract signal process name, handling term names like "sig__demo"
+    signal_process = getattr(fit_model, "signal_process", None)
+    signal_process_name = None
+    if signal_process is not None:
+        signal_process_name = _term_process_name(fit_model, signal_process)
 
     for term_name, shape in getattr(fit_model, "shapes", {}).items():
         if term_name not in getattr(fit_model, "yields", {}):
@@ -150,7 +213,7 @@ def _component_curve_by_channel(fit_model, x_plot, bin_width, channel):
         total = total + comp
 
         process = _term_process_name(fit_model, term_name)
-        if getattr(fit_model, "signal_process", None) is not None and process == fit_model.signal_process:
+        if signal_process_name is not None and process == signal_process_name:
             signal = signal + comp
         else:
             background = background + comp
@@ -280,8 +343,6 @@ def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
                     yerr=yerr,
                     fmt="o",
                     color="black",
-                    markersize=4,
-                    capsize=2,
                     label=data_label,
                 )
 
@@ -301,21 +362,44 @@ def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
                             band_low,
                             band_high,
                             step="post",
-                            color="gray",
-                            alpha=0.25,
+                            color="#4C78A8",
+                            alpha=0.20,
                             linewidth=0.0,
                             label=r"Total model $\pm 1\sigma$",
                         )
-                    ax.step(edges[:-1], total_counts, where="post", color="black", linewidth=1.8, label="Total model")
+                    ax.step(edges[:-1], total_counts, where="post", color="black", linestyle="--", linewidth=1.8, label="Total model")
                 if bkg_counts.size:
-                    ax.step(edges[:-1], bkg_counts, where="post", color="tab:blue", linestyle="--", linewidth=1.6, label="Total background")
+                    ax.step(edges[:-1], bkg_counts, where="post", color="#54A24B", linewidth=1.6, label="Total background")
                 if sig_counts.size:
-                    ax.step(edges[:-1], sig_counts, where="post", color="tab:red", linestyle="-.", linewidth=1.6, label="Signal")
+                    ax.step(edges[:-1], sig_counts, where="post", color="#E45756", linewidth=1.6, label="Signal")
 
                 ax.set_xlabel(fit_model.obs.obs[0] if getattr(fit_model.obs, "obs", None) else "obs")
                 ax.set_ylabel("Entries")
 
             else:
+                # Check if bin edges are available (binned data stored as values + edges)
+                bin_edges_available = False
+                edges = None
+                
+                # First check if bin edges are stored in the fit_model
+                if hasattr(fit_model, 'data_bin_edges') and fit_model.data_bin_edges:
+                    channel_key = category if category else None
+                    if channel_key and channel_key in fit_model.data_bin_edges:
+                        edges = fit_model.data_bin_edges[channel_key]
+                        if edges.size >= 2:
+                            bin_edges_available = True
+                    elif not channel_key and len(fit_model.data_bin_edges) > 0:
+                        # Get the first available bin_edges if no specific channel
+                        edges = next(iter(fit_model.data_bin_edges.values()))
+                        if edges.size >= 2:
+                            bin_edges_available = True
+                
+                # Fallback: check if bin edges are in dataset_plot
+                if not bin_edges_available and "bin_edges" in dataset_plot:
+                    edges = np.asarray(dataset_plot.get("bin_edges", []), dtype=float).reshape(-1)
+                    if edges.size >= 2:
+                        bin_edges_available = True
+                
                 values_source = dataset_plot.get("values")
                 obs_label = fit_model.obs.obs[0] if getattr(fit_model.obs, "obs", None) else "obs"
                 lower, upper = fit_model.obs_range
@@ -337,8 +421,14 @@ def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
                         obs_label = channel_space.obs[0]
 
                 values = np.asarray(values_source, dtype=float)
-                bins = np.linspace(float(lower), float(upper), int(binned_bins) + 1)
-                counts, edges = np.histogram(values, bins=bins)
+                
+                # Use provided bin edges if available (binned data), otherwise create new bins
+                if bin_edges_available:
+                    counts, _ = np.histogram(values, bins=edges)
+                else:
+                    edges = np.linspace(float(lower), float(upper), int(binned_bins) + 1)
+                    counts, _ = np.histogram(values, bins=edges)
+                
                 centers = 0.5 * (edges[:-1] + edges[1:])
                 yerr = np.sqrt(np.maximum(counts, 1.0))
 
@@ -348,14 +438,22 @@ def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
                     yerr=yerr,
                     fmt="o",
                     color="black",
-                    markersize=4,
-                    capsize=2,
                     label=data_label,
                 )
 
-                bin_width = float(edges[1] - edges[0]) if len(edges) > 1 else 1.0
-                n_curve = max(400, int(binned_bins) * 5)
-                x_curve = np.linspace(float(lower), float(upper), n_curve)
+                # For binned data, evaluate components at bin centers; for unbinned, use high resolution
+                if bin_edges_available:
+                    # Use bin centers from the provided edges
+                    bin_centers = 0.5 * (edges[:-1] + edges[1:])
+                    x_curve = bin_centers
+                    # For binned data, use average bin width for normalization
+                    bin_widths = np.diff(edges)
+                    bin_width = float(np.mean(bin_widths))
+                else:
+                    # For unbinned data, use high resolution sampling
+                    bin_width = float(edges[1] - edges[0]) if len(edges) > 1 else 1.0
+                    n_curve = max(400, int(binned_bins) * 5)
+                    x_curve = np.linspace(float(lower), float(upper), n_curve)
 
                 total_y, sig_y, bkg_y = _component_curve_by_channel(fit_model, x_curve, bin_width, category)
                 if np.any(total_y):
@@ -370,16 +468,16 @@ def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
                             x_curve,
                             band_low,
                             band_high,
-                            color="gray",
-                            alpha=0.25,
+                            color="#4C78A8",
+                            alpha=0.20,
                             linewidth=0.0,
                             label=r"Total model $\pm 1\sigma$",
                         )
-                    ax.plot(x_curve, total_y, color="black", linewidth=1.8, label="Total model")
+                    ax.plot(x_curve, total_y, color="black", linestyle="--", linewidth=1.8, label="Total model")
                 if np.any(sig_y):
-                    ax.plot(x_curve, sig_y, color="tab:red", linestyle="-.", linewidth=1.6, label="Signal")
+                    ax.plot(x_curve, sig_y, color="#E45756", linewidth=1.6, label="Signal")
                 if np.any(bkg_y):
-                    ax.plot(x_curve, bkg_y, color="tab:blue", linestyle="--", linewidth=1.6, label="Total background")
+                    ax.plot(x_curve, bkg_y, color="#54A24B", linewidth=1.6, label="Total background")
 
                 ax.set_xlabel(obs_label)
                 ax.set_ylabel("Entries")

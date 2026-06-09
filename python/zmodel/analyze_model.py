@@ -26,6 +26,7 @@ from backends.analysis_common import (
     resolve_data_mode,
     resolve_dataset_mode,
 )
+from backends.print_model_helpers import print_model_info
 from backends.zfit_parameter_utils import find_parameter_by_name
 from backends.analysis_reporting import (
     add_fit_quality,
@@ -561,6 +562,11 @@ def run_analysis_cli(args):
                 )
         elif "cls_error" in first:
             print(f"CLs failed (alpha={args.cls:g}): {first['cls_error']}")
+
+    # Print model information if requested
+    if getattr(args, "print_model", False) and summaries:
+        first_summary = summaries[0]
+        print_model_info(fit_model, first_summary, "zmodel")
 
     maybe_plot_summary_artifacts(args, summaries, fit_model, plot_summary_artifacts)
 

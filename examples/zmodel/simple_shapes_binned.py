@@ -58,15 +58,15 @@ BKG_FRACS = np.array([
 ])
 
 # ---------------------------------------------------------------------------
-# zfit PDFs (unbinned; zmodel converts to binned internally via --fit-mode binned)
+# zfit PDFs (continuous; zmodel can use with binned data via --fit-mode binned)
 # ---------------------------------------------------------------------------
 obs = zfit.Space("mass", limits=(OBS_MIN, OBS_MAX))
 
-sig_mu_param    = zfit.Parameter("sig_mu",    SIG_MU,    103.0, 107.0)
-sig_sigma_param = zfit.Parameter("sig_sigma", SIG_SIGMA,  0.02,   2.0)
+sig_mu_param    = zfit.Parameter("sig_mu",    SIG_MU,    floating=False)
+sig_sigma_param = zfit.Parameter("sig_sigma", SIG_SIGMA, floating=False)
 sig_pdf = zfit.pdf.Gauss(obs=obs, mu=sig_mu_param, sigma=sig_sigma_param, name="sig_pdf")
 
-bkg_lambda_param = zfit.Parameter("bkg_lambda", BKG_LAM, -3.0, -0.001)
+bkg_lambda_param = zfit.Parameter("bkg_lambda", BKG_LAM, floating=False)
 bkg_pdf = zfit.pdf.Exponential(obs=obs, lam=bkg_lambda_param, name="bkg_pdf")
 
 # ---------------------------------------------------------------------------

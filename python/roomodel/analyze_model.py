@@ -22,6 +22,7 @@ from backends.analysis_reporting import (
     save_and_print_snapshot,
 )
 from backends.analysis_console import print_limit_summary_lines
+from backends.print_model_helpers import print_model_info
 from roomodel.analyze_plotting import plot_summary_artifacts
 from roomodel.build_model_from_text import build_and_save_model_from_card_file
 from roomodel.model_io import load_fit_model, load_workspace_and_metadata
@@ -63,13 +64,38 @@ def _load_analysis_model(model_file=None, input_card=None):
     return load_fit_model(temp_model)
 
 
+def _find_sim_pdf_in_prodpdf(prod_pdf, workspace):
+    """Return the RooSimultaneous (or RooProdPdf channel model) embedded inside a
+    RooProdPdf constraint wrapper, or *prod_pdf* itself if none is found."""
+    try:
+        components = prod_pdf.pdfList()
+        for comp in components:
+            if comp is None:
+                continue
+            cname = str(comp.ClassName()) if hasattr(comp, "ClassName") else ""
+            if "RooSimultaneous" in cname or "RooProdPdf" == cname:
+                return comp
+    except Exception:
+        pass
+    return prod_pdf
+
+
 def _workspace_objects(fit_model):
     ws, metadata = load_workspace_and_metadata(fit_model.model_file)
     model = ws.pdf(fit_model.model_name)
     if model is None or not bool(model):
         raise ValueError(f"Model PDF '{fit_model.model_name}' not found in workspace '{ws.GetName()}'")
+    # If the top-level PDF is a constraint wrapper (RooProdPdf named constrainedPdf)
+    # unwrap it so that the rest of the code sees the RooSimultaneous/channel PDF
+    # for observable resolution, data generation, and CLs scan — while the full
+    # constrained PDF is returned separately for fitting.
+    model_class = str(model.ClassName()) if hasattr(model, "ClassName") else ""
+    if "RooProdPdf" in model_class and fit_model.model_name == "constrainedPdf":
+        inner_model = _find_sim_pdf_in_prodpdf(model, ws)
+    else:
+        inner_model = model
     data = ws.data(fit_model.data_name) if fit_model.data_name else None
-    return ws, metadata, model, data
+    return ws, metadata, model, data, inner_model
 
 
 def _resolve_poi_var(workspace, fit_model):
@@ -832,6 +858,53 @@ def _apply_feldman_cousins_summary_from_scan(summary, alpha, scan_points, n_toys
     }
 
 
+def _extract_fit_params(fit_result, workspace):
+    """Extract floating parameter values and uncertainties from RooFit fit result.
+    
+    Parameters
+    ----------
+    fit_result : RooFitResult
+        The fit result object from model.fitTo()
+    workspace : RooWorkspace
+        The RooWorkspace containing the parameters
+        
+    Returns
+    -------
+    tuple of (dict, dict)
+        (param_values, param_uncertainties) with all floating parameters
+    """
+    ROOT = _get_root()
+    param_values = {}
+    param_uncertainties = {}
+    
+    if fit_result is None or not bool(fit_result):
+        return param_values, param_uncertainties
+    
+    try:
+        # Get the correlation matrix to access all parameters
+        params = fit_result.floatParsFinal()
+        if params is not None:
+            for i in range(params.getSize()):
+                var = params.at(i)
+                if var is not None:
+                    name = str(var.GetName())
+                    try:
+                        value = float(var.getVal())
+                        param_values[name] = value
+                    except Exception:
+                        pass
+                    try:
+                        error = float(var.getError())
+                        if error > 0:
+                            param_uncertainties[name] = error
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    
+    return param_values, param_uncertainties
+
+
 def _run_single_fit(
     workspace,
     model,
@@ -844,12 +917,16 @@ def _run_single_fit(
     limit_scan_points=None,
     limit_scan_full_range=False,
     limit_scan_poi_min=None,
+    inner_model=None,
 ):
     ROOT = _get_root()
     obs = _resolve_obs_var(data, workspace) or input_obs_var
     fit_data = data
     is_datahist = False
-    model_name = str(model.ClassName()) if hasattr(model, "ClassName") else ""
+    # Use inner_model (unwrapped from constraint wrapper) for class detection;
+    # the constrained model (model) is used for fitting below.
+    _detect_model = inner_model if inner_model is not None else model
+    model_name = str(_detect_model.ClassName()) if hasattr(_detect_model, "ClassName") else ""
     is_simultaneous = "RooSimultaneous" in model_name
 
     if data is not None:
@@ -941,7 +1018,7 @@ def _run_single_fit(
     if collect_plot_details:
         fit_components = _fit_component_plot_payload(
             workspace,
-            model,
+            _detect_model,
             fit_model,
             fit_data,
             obs,
@@ -950,7 +1027,7 @@ def _run_single_fit(
         )
         channel_plots = _channel_plot_payloads(
             workspace,
-            model,
+            _detect_model,
             fit_model,
             fit_data,
             fit_mode,
@@ -962,13 +1039,16 @@ def _run_single_fit(
     if need_scan:
         scan_points = int(limit_scan_points) if (limit_scan_points is not None and int(limit_scan_points) > 0) else 31
         delta_nll_scan = _delta_nll_scan_payload(
-            model,
+            model,  # constrained model for NLL scan (correct likelihood)
             fit_data,
             poi,
             n_points=scan_points,
             full_range=bool(limit_scan_full_range),
             poi_scan_min=limit_scan_poi_min,
         )
+
+    # Extract floating parameter values and uncertainties from fit result
+    fit_params, fit_param_unc = _extract_fit_params(fit_result, workspace)
 
     return {
         "valid": bool(valid),
@@ -984,6 +1064,8 @@ def _run_single_fit(
         "fit_components": fit_components,
         "channel_plots": channel_plots,
         "delta_nll_scan": delta_nll_scan,
+        "fit_params": fit_params,
+        "fit_param_unc": fit_param_unc,
     }
 
 
@@ -1418,17 +1500,19 @@ def run_analysis_cli(args):
     original_ranges = getattr(args, "set_parameter_ranges", None)
     args.set_parameter_ranges = set_ranges_spec or None
 
-    ws, metadata, model, observed_data = _workspace_objects(fit_model)
+    ws, metadata, model, observed_data, inner_model = _workspace_objects(fit_model)
     _apply_parameter_overrides(ws, args)
     
     # Restore original args value
     args.set_parameter_ranges = original_ranges
     _enforce_physical_poi_bounds(ws, fit_model)
+    # Use inner_model (the RooSimultaneous / channel PDF, unwrapped from any
+    # constraint wrapper) for observable resolution and dataset generation.
     obs_var = _resolve_obs_var(observed_data, ws)
     if obs_var is None:
         raise ValueError("Could not resolve observable from workspace")
 
-    nominal_param_state = _capture_nominal_parameter_state(ws, model, observed_data, obs_var=obs_var)
+    nominal_param_state = _capture_nominal_parameter_state(ws, inner_model, observed_data, obs_var=obs_var)
 
     has_observed_data = observed_data is not None
     use_observed_data, use_asimov_data, n_toys = resolve_dataset_mode(args.toys, has_observed_data)
@@ -1468,6 +1552,7 @@ def run_analysis_cli(args):
             limit_scan_points=limit_scan_points,
             limit_scan_full_range=limit_scan_full_range,
             limit_scan_poi_min=limit_poi_min,
+            inner_model=inner_model,
         )
         if args.cls is not None:
             _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
@@ -1497,13 +1582,15 @@ def run_analysis_cli(args):
     elif use_asimov_data:
         _restore_parameter_state(ws, nominal_param_state)
         ROOT = _get_root()
-        obs_set = _model_observable_set(ws, model, observed_data, obs_var=obs_var)
+        # Use inner_model (unwrapped from constraint wrapper) for observable
+        # resolution and Asimov generation — constraint PDFs have no observables.
+        obs_set = _model_observable_set(ws, inner_model, observed_data, obs_var=obs_var)
         if obs_set is None:
             raise ValueError("Could not resolve observables for Asimov generation")
-        model_name = str(model.ClassName()) if hasattr(model, "ClassName") else ""
+        inner_model_name = str(inner_model.ClassName()) if hasattr(inner_model, "ClassName") else ""
         # Ensure the index category is in obs_set for RooSimultaneous
-        if "RooSimultaneous" in model_name:
-            index_cat_fn = getattr(model, "indexCat", None)
+        if "RooSimultaneous" in inner_model_name:
+            index_cat_fn = getattr(inner_model, "indexCat", None)
             if callable(index_cat_fn):
                 try:
                     cat = index_cat_fn()
@@ -1512,25 +1599,25 @@ def run_analysis_cli(args):
                         obs_set.add(cat)
                 except Exception:
                     pass
-        if "RooSimultaneous" in model_name:
-            asimov = _build_asimov_for_simultaneous(ws, model)
+        if "RooSimultaneous" in inner_model_name:
+            asimov = _build_asimov_for_simultaneous(ws, inner_model)
             if asimov is None or not bool(asimov):
-                asimov = model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+                asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
         elif obs_var is not None:
             try:
                 n_obs = int(obs_set.getSize())
             except Exception:
                 n_obs = 0
             if n_obs > 1:
-                asimov = model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+                asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
             else:
-                asimov = model.generateBinned(
+                asimov = inner_model.generateBinned(
                     obs_set,
                     ROOT.RooFit.Binning(int(args.binned_bins), float(obs_var.getMin()), float(obs_var.getMax())),
                     ROOT.RooFit.ExpectedData(True),
                 )
         else:
-            asimov = model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+            asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
         summary = _run_single_fit(
             ws,
             model,
@@ -1543,6 +1630,7 @@ def run_analysis_cli(args):
             limit_scan_points=limit_scan_points,
             limit_scan_full_range=limit_scan_full_range,
             limit_scan_poi_min=limit_poi_min,
+            inner_model=inner_model,
         )
         if args.cls is not None:
             _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
@@ -1560,7 +1648,8 @@ def run_analysis_cli(args):
     else:
         for idx in range(int(n_toys)):
             _restore_parameter_state(ws, nominal_param_state)
-            toy_data = _generate_dataset(ws, model, observed_data, obs_var, mode, int(args.binned_bins))
+            # Use inner_model for toy generation (constraint PDFs have no observables)
+            toy_data = _generate_dataset(ws, inner_model, observed_data, obs_var, mode, int(args.binned_bins))
             _restore_parameter_state(ws, nominal_param_state)
             summary = _run_single_fit(
                 ws,
@@ -1574,6 +1663,7 @@ def run_analysis_cli(args):
                 limit_scan_points=limit_scan_points,
                 limit_scan_full_range=limit_scan_full_range,
                 limit_scan_poi_min=limit_poi_min,
+                inner_model=inner_model,
             )
             if args.cls is not None:
                 _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
@@ -1605,6 +1695,18 @@ def run_analysis_cli(args):
     print(f"Analyzed roomodel workspace '{fit_model.workspace_name}'")
     if summaries and (args.cls is not None or args.feldman_cousins is not None):
         print_limit_summary_lines(summaries[0], include_scan_details=True, include_yield_upper=True)
+    
+    # Print model information if requested
+    if getattr(args, "print_model", False) and summaries:
+        first_summary = summaries[0]
+        # Try to load the workspace for additional model info
+        state = None
+        try:
+            state = load_workspace_and_metadata(args.model_file)
+        except Exception:
+            pass
+        print_model_info(fit_model, first_summary, "roomodel", state=state)
+    
     print_runtime_summary(summaries, total_time_s)
 
     maybe_plot_summary_artifacts(args, summaries, fit_model, plot_summary_artifacts)

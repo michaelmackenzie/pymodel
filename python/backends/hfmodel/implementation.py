@@ -41,7 +41,6 @@ class HFModelBackend(BaseBackend):
             output_default="analysis_output.json",
             output_help="Output analysis snapshot path (JSON is written)",
             poi_scan_max_help="Upper edge for POI scans (used by CLs and profile scans; defaults to POI upper bound)",
-            include_plot_alias=True,
         )
 
     def build_defaults(self):

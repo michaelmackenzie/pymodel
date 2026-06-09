@@ -81,6 +81,11 @@ def _is_binned_dataset(dataset):
 
 
 def _has_histogram_input_data(fit_model):
+    # Check if data_bin_edges are stored (indicates original data was binned)
+    data_bin_edges = getattr(fit_model, "data_bin_edges", None)
+    if data_bin_edges:
+        return True
+    
     data = getattr(fit_model, "data", None)
     if isinstance(data, dict):
         return any(_is_binned_dataset(entry) for entry in data.values())
@@ -664,7 +669,14 @@ def _build_observed_input(fit_model, resolved_fit_mode, binned_space):
         return channel_data, None, dataset_plot
 
     if resolved_fit_mode == "binned":
-        edges = _binning_edges_as_float_array(binned_space.binning)
+        # Use original data bin edges if available, otherwise use binned_space binning
+        data_bin_edges = getattr(fit_model, "data_bin_edges", None)
+        if data_bin_edges and len(data_bin_edges) > 0:
+            # Get the first available bin edges (for single-channel case)
+            edges = next(iter(data_bin_edges.values())) if isinstance(data_bin_edges, dict) else np.asarray(data_bin_edges, dtype=float)
+        else:
+            edges = _binning_edges_as_float_array(binned_space.binning)
+        
         if hasattr(fit_model.data, "value") or hasattr(fit_model.data, "values"):
             observed_values = _observed_dataset_to_values(fit_model.data, binned_space)
             counts, _ = np.histogram(observed_values, bins=edges)

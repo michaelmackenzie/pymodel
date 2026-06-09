@@ -22,6 +22,7 @@ from backends.analysis_reporting import (
     save_and_print_snapshot,
     maybe_plot_summary_artifacts,
 )
+from backends.print_model_helpers import print_model_info
 
 from hfmodel.analysis_core import configure_runtime, run_analysis
 from hfmodel.analysis_overrides import apply_parameter_overrides
@@ -222,6 +223,12 @@ def run_analysis_cli(args):
                 f"1 sigma [{p16:.4g}, {p84:.4g}], "
                 f"2 sigma [{p2p5:.4g}, {p97p5:.4g}]"
             )
+    
+    # Print model information if requested
+    if getattr(args, "print_model", False) and summaries:
+        first_summary = summaries[0]
+        print_model_info(fit_model, first_summary, "hfmodel")
+    
     print_runtime_summary(summaries, total_time_s)
 
     maybe_plot_summary_artifacts(args, summaries, fit_model, plot_summary_artifacts)

@@ -115,8 +115,7 @@ def _coerce_unbinned_data_obs(obs_space, payload):
         return payload
 
     # When the payload is a dict with both "values" (bin counts) and "bin_edges",
-    # expand the counts into pseudo-event positions at each bin center so the
-    # unbinned zfit loss sees the correct number of events in the correct range.
+    # create a BinnedData object to preserve the binning information.
     if isinstance(payload, dict) and "values" in payload and "bin_edges" in payload:
         counts = np.maximum(np.rint(np.asarray(payload["values"], dtype=float)).astype(int), 0)
         edges = np.asarray(payload["bin_edges"], dtype=float)
@@ -125,8 +124,15 @@ def _coerce_unbinned_data_obs(obs_space, payload):
             raise ValueError(
                 f"data_obs: bin_edges implies {len(centers)} bins but values has {len(counts)} entries"
             )
-        expanded = np.repeat(centers, counts).reshape(-1, 1)
-        return zfit.Data.from_numpy(obs=obs_space, array=expanded)
+        
+        # Create a binned space from the edges
+        from zfit.data import VariableBinning
+        obs_name = obs_space.obs[0] if hasattr(obs_space, "obs") and obs_space.obs else "obs"
+        binned_space = zfit.Space(obs_name, limits=(float(edges[0]), float(edges[-1])), 
+                                   binning=VariableBinning(edges, name=obs_name))
+        
+        # Create BinnedData from the counts
+        return zfit.data.BinnedData.from_tensor(space=binned_space, values=counts)
 
     if isinstance(payload, dict) and "values" in payload:
         payload = payload["values"]
@@ -461,6 +467,7 @@ def build_model_from_card(card: CardSpec, card_dir: str):
     )
     observed_counts_by_channel: Dict[str, float] = {}
     observed_values_by_channel: Dict[str, np.ndarray] = {}
+    data_bin_edges: Dict[str, np.ndarray] = {}
 
     observed_data = None
 
@@ -511,7 +518,8 @@ def build_model_from_card(card: CardSpec, card_dir: str):
                 if not os.path.isabs(obs_path):
                     obs_path = os.path.join(card_dir, obs_path)
                 obs_payload = _load_shape_payload_from_file(os.path.abspath(obs_path))
-                channel_data = _coerce_unbinned_data_obs(channel_obs[channel], _extract_data_obs_payload(obs_payload))
+                payload_data = _extract_data_obs_payload(obs_payload)
+                channel_data = _coerce_unbinned_data_obs(channel_obs[channel], payload_data)
                 if channel_data is None:
                     continue
                 channel_values = _data_obs_to_unbinned_values(channel_data, channel_obs[channel])
@@ -519,6 +527,9 @@ def build_model_from_card(card: CardSpec, card_dir: str):
                     channel_values = channel_values.reshape(-1, 1)
                 observed_values_by_channel[channel] = channel_values.reshape(-1)
                 merged_rows.append(channel_values)
+                # Extract bin edges if present in the payload
+                if isinstance(payload_data, dict) and "bin_edges" in payload_data:
+                    data_bin_edges[channel] = np.asarray(payload_data["bin_edges"], dtype=float)
 
             if merged_rows:
                 unique_signatures = {
@@ -545,6 +556,10 @@ def build_model_from_card(card: CardSpec, card_dir: str):
                 observed_data = _coerce_unbinned_data_obs(obs_space, _extract_data_obs_payload(obs_payload))
                 if observed_data is not None:
                     observed_values_by_channel[card.channels[0]] = _data_obs_to_unbinned_values(observed_data, obs_space)
+                    # Extract bin edges if present in the payload
+                    payload_data = _extract_data_obs_payload(obs_payload)
+                    if isinstance(payload_data, dict) and "bin_edges" in payload_data:
+                        data_bin_edges[card.channels[0]] = np.asarray(payload_data["bin_edges"], dtype=float)
             else:
                 observed_data = {}
                 payload_data = _extract_data_obs_payload(obs_payload)
@@ -554,6 +569,9 @@ def build_model_from_card(card: CardSpec, card_dir: str):
                         continue
                     observed_data[channel] = channel_data
                     observed_values_by_channel[channel] = _data_obs_to_unbinned_values(channel_data, channel_obs[channel])
+                    # Extract bin edges if present in the payload
+                    if isinstance(payload_data, dict) and "bin_edges" in payload_data:
+                        data_bin_edges[channel] = np.asarray(payload_data["bin_edges"], dtype=float)
 
         expected_observation = float(sum(card.observations.values())) if card.observations else card.observation_count
         if observed_data is not None and expected_observation is not None:
@@ -767,6 +785,7 @@ def build_model_from_card(card: CardSpec, card_dir: str):
         channel_models=channel_models if mixed_channel_observables else {},
         channel_obs=channel_obs if not card.is_counting else {},
         channel_obs_ranges=channel_obs_ranges if not card.is_counting else {},
+        data_bin_edges=data_bin_edges,
     )
 
 

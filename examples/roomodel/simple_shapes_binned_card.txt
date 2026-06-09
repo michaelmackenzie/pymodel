@@ -22,5 +22,6 @@ process               sig    bkg
 process               -1      1
 rate                  12     80
 
-lumi      lnN   1.05   1.05
-bkg_norm  lnN    -     1.10
+# Rate-only uncertainties (no shape systematics)
+lumi      lnN  1.05  1.05
+bkg_norm  lnN   -    1.10

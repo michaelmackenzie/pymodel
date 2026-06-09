@@ -33,6 +33,7 @@ class FitModel:
     channel_models: Dict[str, zfit.pdf.BasePDF] = field(default_factory=dict)
     channel_obs: Dict[str, zfit.Space] = field(default_factory=dict)
     channel_obs_ranges: Dict[str, tuple] = field(default_factory=dict)
+    data_bin_edges: Optional[Dict[str, np.ndarray]] = field(default_factory=dict)
 
 # ==============================================================================
 # Helper Function: Convert a ROOT Histogram to zfit-compatible BinnedData

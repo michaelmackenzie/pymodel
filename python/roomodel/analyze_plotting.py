@@ -72,7 +72,7 @@ def _plot_dataset(summary, plot_dir):
             if comp_x.size > 0 and comp_signal.size == comp_x.size:
                 ax.plot(comp_x, comp_signal, color="#E45756", linewidth=2.0, label="Signal fit")
             if comp_x.size > 0 and comp_total.size == comp_x.size:
-                ax.plot(comp_x, comp_total, color="#4C78A8", linewidth=2.2, linestyle="--", label="Total fit")
+                ax.plot(comp_x, comp_total, color="black", linewidth=2.0, linestyle="--", label="Total fit")
 
             title = "Observed data" if summary.get("observed_fit") else f"Dataset {dataset_id}"
             ax.set_title(f"{title} ({channel_name})")
@@ -137,7 +137,7 @@ def _plot_dataset(summary, plot_dir):
     if comp_x.size > 0 and comp_signal.size == comp_x.size:
         ax.plot(comp_x, comp_signal, color="#E45756", linewidth=2.0, label="Signal fit")
     if comp_x.size > 0 and comp_total.size == comp_x.size:
-        ax.plot(comp_x, comp_total, color="#4C78A8", linewidth=2.2, linestyle="--", label="Total fit")
+        ax.plot(comp_x, comp_total, color="black", linewidth=2.0, linestyle="--", label="Total fit")
 
     title = "Observed data" if summary.get("observed_fit") else f"Dataset {dataset_id}"
     ax.set_title(title)

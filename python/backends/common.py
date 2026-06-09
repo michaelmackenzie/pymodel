@@ -50,7 +50,6 @@ def add_shared_analysis_arguments(
     output_default,
     output_help,
     poi_scan_max_help,
-    include_plot_alias=False,
 ):
     parser.add_argument(
         "--toys", "-t",
@@ -120,19 +119,17 @@ def add_shared_analysis_arguments(
         help="Override the POI upper bound (default: derived from parameter constraints or heuristic)",
     )
 
-    if include_plot_alias:
-        parser.add_argument(
-            "--plot",
-            "--plots",
-            action="store_true",
-            help="Save histogram plots of fit parameters, POI pull, and per-toy fit distributions",
-        )
-    else:
-        parser.add_argument(
-            "--plot",
-            action="store_true",
-            help="Save histogram plots of fit parameters, POI pull, and per-toy fit distributions",
-        )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Save histogram plots of fit parameters, POI pull, and per-toy fit distributions",
+    )
+
+    parser.add_argument(
+        "--print-model",
+        action="store_true",
+        help="Print the model information post-fit",
+    )
 
     parser.add_argument(
         "--nll-scan-points",

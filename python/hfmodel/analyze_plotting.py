@@ -88,7 +88,7 @@ def _plot_first_dataset_channels(summary, plot_dir):
 
         # Post-fit figure
         fig_post, ax_post = plt.subplots(figsize=(8, 5))
-        ax_post.errorbar(x, obs, yerr=np.sqrt(np.clip(obs, 1.0, None)), fmt="ko", capsize=2, label="Data")
+        ax_post.errorbar(x, obs, yerr=np.sqrt(np.clip(obs, 1.0, None)), fmt="o", color="black", label="Data")
         if total.size:
             if total_low is not None and total_high is not None:
                 ax_post.fill_between(
@@ -96,12 +96,12 @@ def _plot_first_dataset_channels(summary, plot_dir):
                     total_low,
                     total_high,
                     step="mid",
-                    color="#4D4D4D",
-                    alpha=0.15,
+                    color="#4C78A8",
+                    alpha=0.20,
                     linewidth=0.0,
                     label=r"Total fit $\pm 1\sigma$ (Hessian)",
                 )
-            ax_post.step(x, total, where="mid", color="black", linewidth=1.8, label="Total fit")
+            ax_post.step(x, total, where="mid", color="black", linestyle="--", linewidth=1.8, label="Total fit")
         if bkg.size:
             if bkg_low is not None and bkg_high is not None:
                 ax_post.fill_between(
@@ -109,14 +109,14 @@ def _plot_first_dataset_channels(summary, plot_dir):
                     bkg_low,
                     bkg_high,
                     step="mid",
-                    color="#1F77B4",
+                    color="#54A24B",
                     alpha=0.20,
                     linewidth=0.0,
                     label=r"Background $\pm 1\sigma$ (Hessian)",
                 )
-            ax_post.step(x, bkg, where="mid", color="#1F77B4", linestyle="--", linewidth=1.6, label="Background")
+            ax_post.step(x, bkg, where="mid", color="#54A24B", linewidth=1.6, label="Background")
         if sig.size:
-            ax_post.step(x, sig, where="mid", color="#D62728", linestyle="-.", linewidth=1.6, label="Signal")
+            ax_post.step(x, sig, where="mid", color="#E45756", linewidth=1.6, label="Signal")
 
         ax_post.set_title(f"Post-fit Channel: {channel}")
         ax_post.set_xlabel("Bin index")
@@ -132,13 +132,13 @@ def _plot_first_dataset_channels(summary, plot_dir):
         # Pre-fit figure
         if prefit_total.size or prefit_bkg.size or prefit_sig.size:
             fig_pre, ax_pre = plt.subplots(figsize=(8, 5))
-            ax_pre.errorbar(x, obs, yerr=np.sqrt(np.clip(obs, 1.0, None)), fmt="ko", capsize=2, label="Data")
+            ax_pre.errorbar(x, obs, yerr=np.sqrt(np.clip(obs, 1.0, None)), fmt="o", color="black", label="Data")
             if prefit_total.size:
-                ax_pre.step(x, prefit_total, where="mid", color="#7F7F7F", linewidth=1.8, label="Total pre-fit")
+                ax_pre.step(x, prefit_total, where="mid", color="black", linestyle="--", linewidth=1.8, label="Total pre-fit")
             if prefit_bkg.size:
-                ax_pre.step(x, prefit_bkg, where="mid", color="#6BAED6", linestyle="--", linewidth=1.6, label="Background pre-fit")
+                ax_pre.step(x, prefit_bkg, where="mid", color="#54A24B", linewidth=1.6, label="Background pre-fit")
             if prefit_sig.size:
-                ax_pre.step(x, prefit_sig, where="mid", color="#FB6A4A", linestyle="-.", linewidth=1.6, label="Signal pre-fit")
+                ax_pre.step(x, prefit_sig, where="mid", color="#E45756", linewidth=1.6, label="Signal pre-fit")
 
             ax_pre.set_title(f"Pre-fit Channel: {channel}")
             ax_pre.set_xlabel("Bin index")
