@@ -346,6 +346,23 @@ def _fit_component_plot_payload(workspace, model, fit_model, fit_data, obs_var, 
                     plot_pdf = _unwrap_extended_pdf(channel_pdf)
         except Exception:
             return None
+    else:
+        # For non-simultaneous models, extract channel name from yield variable naming
+        import re
+        for var in _iter_roo_collection(workspace.allVars()):
+            name = str(var.GetName())
+            match = re.search(r'yield_\w+__(\w+)', name)
+            if match:
+                channel_name = match.group(1)
+                break
+        if not channel_name:
+            # Try to find from functions
+            for func in _iter_roo_collection(workspace.allFunctions()):
+                name = str(func.GetName())
+                match = re.search(r'yield_\w+__(\w+)', name)
+                if match:
+                    channel_name = match.group(1)
+                    break
 
     n_bins = int(binned_bins)
     edges = np.asarray(dataset_plot.get("edges", []), dtype=float)
@@ -383,8 +400,13 @@ def _fit_component_plot_payload(workspace, model, fit_model, fit_data, obs_var, 
         for process in process_names:
             if not channel_name:
                 continue
-            term_pdf = workspace.pdf(f"shape_{process}__{channel_name}")
+            # Try the per-channel renamed PDF name: {process}_{channel}
+            term_pdf = workspace.pdf(f"{process}_{channel_name}")
             if term_pdf is None or not bool(term_pdf):
+                # Try shape naming convention
+                term_pdf = workspace.pdf(f"shape_{process}__{channel_name}")
+            if term_pdf is None or not bool(term_pdf):
+                # Try just process name
                 term_pdf = workspace.pdf(str(process))
             term_yield = _get_yield_obj(f"yield_{process}__{channel_name}")
             if term_pdf is None or not bool(term_pdf) or term_yield is None:
