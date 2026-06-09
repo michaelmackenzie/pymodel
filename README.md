@@ -52,6 +52,8 @@ Mu2e environment used for this repository:
 ~~~bash
 source /cvmfs/mu2e.opensciencegrid.org/setupmu2e-art.sh
 pyenv rootana 2.5.0
+# Alternatively
+source setup_env.sh
 ~~~
 
 ## Quick Start
@@ -62,6 +64,7 @@ Add the repository command wrapper and Python modules to your environment:
 export PYMODEL_REPO=$PWD
 export PATH="$PATH:$PYMODEL_REPO/bin"
 export PYTHONPATH="$PYTHONPATH:$PYMODEL_REPO"
+# Done by setup_env.sh
 ~~~
 
 Use the unified CLI:
@@ -71,6 +74,11 @@ pymodel --help
 pymodel hfmodel --help
 pymodel zmodel --help
 pymodel roomodel --help
+
+# Aliases to specific backends
+hfmodel --help
+zmodel --help
+roomodel --help
 ~~~
 
 Example cards and helper scripts are in `examples/hfmodel`, `examples/zmodel`, and `examples/roomodel`.
@@ -91,7 +99,7 @@ pymodel zmodel load model.pkl
 pymodel roomodel load model.root
 ~~~
 
-Run analysis:
+Run analysis [default option]:
 
 ~~~bash
 pymodel hfmodel analyze --model-file model.json
