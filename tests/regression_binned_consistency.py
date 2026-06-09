@@ -76,7 +76,7 @@ def _poi_fit_from_summary(summaries, backend):
 # Per-backend fit runners
 # ---------------------------------------------------------------------------
 
-def _run_hfmodel(repo, cli):
+def _run_hfmodel(repo, cli, asimov = False):
     ex = repo / "examples" / "hfmodel"
     _run([sys.executable, "simple_shapes_binned.py"], cwd=ex, label="hfmodel generate")
 
@@ -88,14 +88,14 @@ def _run_hfmodel(repo, cli):
 
     _run(cli + ["hfmodel", "analyze",
                 "--model-file", model,
-                "--output", output],
+                "-t -1 --output" if asimov else "--output", output],
          cwd=repo, label="hfmodel analyze")
 
     snap = _load_json(repo / output)
     return _poi_fit_from_summary(snap.get("summaries", []), "hfmodel")
 
 
-def _run_zmodel(repo, cli):
+def _run_zmodel(repo, cli, asimov = False):
     ex = repo / "examples" / "zmodel"
     _run([sys.executable, "simple_shapes_binned.py"], cwd=ex, label="zmodel generate")
 
@@ -108,14 +108,14 @@ def _run_zmodel(repo, cli):
     _run(cli + ["zmodel", "analyze",
                 "--model-file", model,
                 "--fit-mode", "binned",
-                "--output", output],
+                "-t -1 --output" if asimov else "--output", output],
          cwd=repo, label="zmodel analyze")
 
     snap = _load_pickle(repo / output)
     return _poi_fit_from_summary(snap.get("summaries", []), "zmodel")
 
 
-def _run_roomodel(repo, cli):
+def _run_roomodel(repo, cli, asimov = False):
     ex = repo / "examples" / "roomodel"
     _run([sys.executable, "simple_shapes_binned.py"], cwd=ex, label="roomodel generate")
 
@@ -127,7 +127,7 @@ def _run_roomodel(repo, cli):
 
     _run(cli + ["roomodel", "analyze",
                 "--model-file", model,
-                "--output", output],
+                "-t -1 --output" if asimov else "--output", output],
          cwd=repo, label="roomodel analyze")
 
     snap = _load_json(repo / output)
@@ -146,9 +146,10 @@ def main():
     print("Binned cross-backend consistency test")
     print("=" * 60)
 
-    hf_poi  = _run_hfmodel(repo, cli)
-    z_poi   = _run_zmodel(repo, cli)
-    roo_poi = _run_roomodel(repo, cli)
+    asimov  = False
+    hf_poi  = _run_hfmodel (repo, cli, asimov)
+    z_poi   = _run_zmodel  (repo, cli, asimov)
+    roo_poi = _run_roomodel(repo, cli, asimov)
 
     print()
     print(f"  hfmodel  POI best-fit: {hf_poi:.6f}")
