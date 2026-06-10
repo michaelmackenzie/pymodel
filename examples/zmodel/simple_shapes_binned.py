@@ -30,9 +30,7 @@ SIG_SIGMA = 0.35
 BKG_LAM   = -0.25
 RATES     = {"sig": 12.0, "bkg": 80.0}
 
-# Fixed observed counts – computed analytically from expected yields rounded
-# to the nearest integer, identical across all three backends:
-#   bins: [10,9,8,7,6,5,5,4,5,8,8,3,2,2,2,2,1,1,1,1]
+# Fixed observed counts
 OBS_COUNTS = [10, 9, 8, 7, 6, 5, 5, 4, 5, 8, 8, 3, 2, 2, 2, 2, 1, 1, 1, 1]
 
 # ---------------------------------------------------------------------------
@@ -99,3 +97,53 @@ def write_shape_payload(output_file="simple_shapes_binned.pkl"):
 
 if __name__ == "__main__":
     write_shape_payload()
+
+    # Perform a test fit
+    binning = zfit.binned.RegularBinning(
+        len(OBS_COUNTS),
+        OBS_MIN,
+        OBS_MAX,
+        name="mass"
+    )
+    obs_binned = zfit.Space("mass", binning=binning)
+    data_obs = zfit.data.BinnedData.from_tensor(
+        space=obs_binned,
+        values=OBS_COUNTS
+    )
+
+    # Define the total floating signal yield directly as the parameter target
+    yield_sig_fit = zfit.Parameter("yield_sig_fit", RATES["sig"], lower=0.0, upper=60.0, step_size=0.1)
+    yield_bkg_fixed = zfit.Parameter("yield_bkg", RATES["bkg"], floating=False)
+
+    # Convert the exact, analytical numpy bin fractions into zfit Binned Data elements
+    sig_hist_data = zfit.data.BinnedData.from_tensor(space=obs_binned, values=SIG_FRACS * RATES["sig"])
+    bkg_hist_data = zfit.data.BinnedData.from_tensor(space=obs_binned, values=BKG_FRACS * RATES["bkg"])
+
+    # Instantiating a HistogramPDF
+    sig_extended = zfit.pdf.HistogramPDF(
+        data=sig_hist_data,
+        extended=yield_sig_fit
+    )
+    bkg_extended = zfit.pdf.HistogramPDF(
+        data=bkg_hist_data,
+        extended=yield_bkg_fixed
+    )
+
+    # Assemble the combination model
+    model = zfit.pdf.BinnedSumPDF(
+        pdfs=[sig_extended, bkg_extended],
+        obs=obs_binned
+    )
+
+    # Execute pure vector Poisson optimization
+    loss = zfit.loss.ExtendedBinnedNLL(model=model, data=data_obs)
+    minimizer = zfit.minimize.Minuit()
+
+    # Minuit discovers yield_sig_fit automatically
+    result = minimizer.minimize(loss)
+
+    print(result)
+
+    # Reconstruct the rate multiplier
+    best_fit_r = yield_sig_fit.value() / RATES["sig"]
+    print(f"\nBest fit signal modifier r: {best_fit_r:.4f}")

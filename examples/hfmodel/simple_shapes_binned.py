@@ -45,18 +45,56 @@ def _exp_bin_frac(lo, hi, lam, total_lo, total_hi):
 
 # Absolute expected counts per bin at nominal signal strength mu=1
 sig_data = np.array([
-    _gauss_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], SIG_MU, SIG_SIGMA) * SIG_YIELD
+    _gauss_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], SIG_MU, SIG_SIGMA)
     for i in range(NBINS)
 ])
 bkg_data = np.array([
-    _exp_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], BKG_LAM, OBS_MIN, OBS_MAX) * BKG_YIELD
+    _exp_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], BKG_LAM, OBS_MIN, OBS_MAX)
     for i in range(NBINS)
 ])
 
 # pyhf requires all template bins to be > 0; clip tiny values
-sig_data = np.clip(sig_data, 1e-6, None)
-bkg_data = np.clip(bkg_data, 1e-6, None)
+# sig_data = np.clip(sig_data, 1e-6, None)
+# bkg_data = np.clip(bkg_data, 1e-6, None)
 
+workspace_dict = {
+    "channels": [
+        {
+            "name": "demo",
+            "samples": [
+                {
+                    "name": "sig",
+                    "data": sig_data.tolist(),
+                },
+                {
+                    "name": "bkg",
+                    "data": bkg_data.tolist(),
+                },
+            ],
+        }
+    ],
+    "observations": [
+        {"name": "demo", "data": OBS_COUNTS}
+    ],
+    "version": "1.0.0",
+}
+
+filename = "simple_shapes_binned_workspace.json"
+with open(filename, "w") as f:
+    json.dump(workspace_dict, f, indent=2)
+print(f"Wrote workspace: {filename}")
+
+#---------------------------------------------------
+# Perform the fit directly here as well
+#---------------------------------------------------
+
+import pyhf
+
+# Use absolute counts
+sig_data *= SIG_YIELD
+bkg_data *= BKG_YIELD
+
+# Add necessary components to the workspace dictionary
 workspace_dict = {
     "channels": [
         {
@@ -68,8 +106,6 @@ workspace_dict = {
                     "data": sig_data.tolist(),
                     "modifiers": [
                         {"name": "mu",        "type": "normfactor", "data": None},
-                        {"name": "lumi",      "type": "normsys",
-                         "data": {"hi": 1.05, "lo": 1.0 / 1.05}},
                     ],
                 },
                 {
@@ -77,10 +113,6 @@ workspace_dict = {
                     # Absolute expected counts; no normfactor (bkg is fixed)
                     "data": bkg_data.tolist(),
                     "modifiers": [
-                        {"name": "lumi",      "type": "normsys",
-                         "data": {"hi": 1.05, "lo": 1.0 / 1.05}},
-                        {"name": "bkg_norm",  "type": "normsys",
-                         "data": {"hi": 1.10, "lo": 1.0 / 1.10}},
                     ],
                 },
             ],
@@ -101,7 +133,24 @@ workspace_dict = {
     "version": "1.0.0",
 }
 
-filename = "simple_shapes_binned_workspace.json"
-with open(filename, "w") as f:
-    json.dump(workspace_dict, f, indent=2)
-print(f"Wrote workspace: {filename}")
+workspace = pyhf.Workspace(workspace_dict)
+model = workspace.model()
+observations = workspace.data(model)
+print(f"  channels: {model.config.channels}")
+print(f"     nbins: {model.config.channel_nbins}")
+print(f"   samples: {model.config.samples}")
+print(f" modifiers: {model.config.modifiers}")
+print(f"parameters: {model.config.parameters}")
+print(f"  nauxdata: {model.config.nauxdata}")
+print(f"   auxdata: {model.config.auxdata}")
+
+print("Performing Profile Likelihood fit...")
+bestfit_pars = pyhf.infer.mle.fit(observations, model)
+poi_value = bestfit_pars[model.config.poi_index]
+print(f"Fitted Signal Strength (mu): {poi_value:.4f}")
+
+print(bkg_data / BKG_YIELD)
+print(sig_data / SIG_YIELD)
+ndata = sum(OBS_COUNTS)
+nfit =  sum(bkg_data) + poi_value*sum(sig_data)
+print(f'N(data) = {ndata}, N(fit) = {nfit}')

@@ -44,6 +44,15 @@ BKG_YIELD = 80.0
 # Fixed observed counts – identical across all three backends
 OBS_COUNTS = [10, 9, 8, 7, 6, 5, 5, 4, 5, 8, 8, 3, 2, 2, 2, 2, 1, 1, 1, 1]
 
+def _gauss_bin_frac(lo, hi, mu, sigma):
+    return 0.5 * (special.erf((hi - mu) / (sigma * np.sqrt(2)))
+                - special.erf((lo - mu) / (sigma * np.sqrt(2))))
+
+
+def _exp_bin_frac(lo, hi, lam, total_lo, total_hi):
+    norm = (np.exp(lam * total_lo) - np.exp(lam * total_hi)) / (-lam)
+    return (np.exp(lam * lo) - np.exp(lam * hi)) / (-lam) / norm
+
 def build_shapes_workspace():
     ROOT = _get_root()
     ws = ROOT.RooWorkspace("shapes_ws")
@@ -51,36 +60,81 @@ def build_shapes_workspace():
     mass = ROOT.RooRealVar("mass", "mass", OBS_MIN, OBS_MAX)
     mass.setBins(NBINS)
 
-    # Signal: Gaussian with fixed parameters
-    sig_mu    = ROOT.RooRealVar("sig_mu",    "sig_mu",    SIG_MU,    OBS_MIN, OBS_MAX)
-    sig_sigma = ROOT.RooRealVar("sig_sigma", "sig_sigma", SIG_SIGMA, 0.01, 2.0)
-    sig_mu.setConstant(True)
-    sig_sigma.setConstant(True)
-    sig_pdf_unbinned = ROOT.RooGaussian("sig_ub", "Signal Gaussian", mass, sig_mu, sig_sigma)
-    sig_hist = sig_pdf_unbinned.createHistogram("sig_hist", mass)
+
+    # Histogrammed PDFs
+    sig_data = np.array([
+        _gauss_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], SIG_MU, SIG_SIGMA)
+        for i in range(NBINS)
+    ])
+    bkg_data = np.array([
+        _exp_bin_frac(BIN_EDGES[i], BIN_EDGES[i + 1], BKG_LAM, OBS_MIN, OBS_MAX)
+        for i in range(NBINS)
+    ])
+
+    # Create TH1s
+    bkg_hist = ROOT.TH1D("bkg_hist", "bkg_hist", NBINS, BIN_EDGES)
+    sig_hist = ROOT.TH1D("sig_hist", "sig_hist", NBINS, BIN_EDGES)
+    obs_hist = ROOT.TH1D("obs_hist", "obs_hist", NBINS, BIN_EDGES)
+
+    dx = (OBS_MAX - OBS_MIN) / NBINS
+    for i in range(NBINS):
+        bkg_hist.SetBinContent(i + 1, bkg_data[i]) # / (BIN_EDGES[i+1] - BIN_EDGES[i]))
+        sig_hist.SetBinContent(i + 1, sig_data[i]) # / (BIN_EDGES[i+1] - BIN_EDGES[i]))    
+        obs_hist.SetBinContent(i + 1, float(OBS_COUNTS[i]))
+
+    # Create PDFs
     data_sig = ROOT.RooDataHist("data_sig", "Signal Data", ROOT.RooArgList(mass), sig_hist)
     sig_pdf = ROOT.RooHistPdf("sig", "Signal PDF", mass, data_sig)
 
-    bkg_lam = ROOT.RooRealVar("bkg_lam", "bkg_lam", BKG_LAM, -3.0, -0.001)
-    bkg_lam.setConstant(True)
-    # Use GenericPdf with formula exp(lam*(mass - OBS_MIN))
-    bkg_pdf_unbinned = ROOT.RooExponential("bkg_ub", "Background PDF", mass, bkg_lam)
-    bkg_hist = bkg_pdf_unbinned.createHistogram("bkg_hist", mass)
     data_bkg = ROOT.RooDataHist("data_bkg", "Background Data", ROOT.RooArgList(mass), bkg_hist)
     bkg_pdf = ROOT.RooHistPdf("bkg", "Background PDF", mass, data_bkg)
 
-    # Build TH1 histograms
-    obs_hist = ROOT.TH1D("obs_hist", "obs_hist", NBINS, BIN_EDGES)
-
-    for i in range(NBINS):
-        obs_hist.SetBinContent(i + 1, float(OBS_COUNTS[i]))
-
-    # Import RooDataHist objects into the workspace
+    # Observed data
     data_obs = ROOT.RooDataHist("data_obs", "Observed data", ROOT.RooArgList(mass), obs_hist)
 
+    # Import to the workspace
     for obj in (mass, sig_pdf, bkg_pdf, data_obs):
         getattr(ws, "import")(obj)
 
+    # Do a test fit
+    yield_sig = ROOT.RooRealVar("yield_sig", "Signal yield", 12.)
+    yield_bkg = ROOT.RooRealVar("yield_bkg", "Background yield", 80.)
+    yield_sig.setConstant(True)
+    yield_bkg.setConstant(True)
+    r = ROOT.RooRealVar("r", "Signal modifier", 1., -5., 5.)
+    yield_sig_eff = ROOT.RooFormulaVar("yield_sig_eff", "@0*@1", ROOT.RooArgList(r, yield_sig))
+    sig_pdf.setInterpolationOrder(0)
+    bkg_pdf.setInterpolationOrder(0)
+    # pdf = ROOT.RooRealSumPdf("pdf", "Total PDF",
+    #                          ROOT.RooArgList(sig_pdf, bkg_pdf),
+    #                          ROOT.RooArgList(yield_sig_eff, yield_bkg),
+    #                          False)
+    pdf = ROOT.RooAddPdf("pdf", "Total PDF",
+                         ROOT.RooArgList(sig_pdf, bkg_pdf),
+                         ROOT.RooArgList(yield_sig_eff, yield_bkg))
+    pdf.fitTo(data_obs,
+              ROOT.RooFit.Extended(True),
+              ROOT.RooFit.Binned(True),                      # Forces binned evaluation
+              ROOT.RooFit.DataError(ROOT.RooAbsData.Poisson) # Forces Poisson weights
+              )
+
+    ROOT.gROOT.SetBatch(True)
+    frame = mass.frame()
+    data_obs.plotOn(frame)
+    pdf.plotOn(frame)
+    pdf.plotOn(frame, ROOT.RooFit.LineStyle(ROOT.kDashed), ROOT.RooFit.Components("sig"))
+    pdf.plotOn(frame, ROOT.RooFit.LineStyle(ROOT.kDashed), ROOT.RooFit.Components("bkg"))
+    c = ROOT.TCanvas()
+    frame.Draw()
+    c.SaveAs("simple_shapes_binned.png")
+
+    sig_data = [ sig_hist.GetBinContent(i+1) for i in range(NBINS) ]
+    bkg_data = [ bkg_hist.GetBinContent(i+1) for i in range(NBINS) ]
+    ndata = sum(OBS_COUNTS)
+    nfit = yield_bkg.getVal() + r.getVal()*yield_sig.getVal()
+    print(r)
+    print(f'N(data) = {ndata}, N(fit) = {nfit}')
+    
     return ws
 
 
