@@ -1,0 +1,50 @@
+* Work needed
+
+* Bugs
+** zmodel binned shapes
+- Binned shape fits aren't reliable and need closer inspection
+- The zfit histogram PDF serialization is causing issues
+- Different results doing direct data card evaluation vs. build and then loaded model evaluation
+
+** Feldman-Cousins
+- The qmu critical evaluation has (potentially) statistical jitters even with high N(toys)
+- Plot p(q_obs) instead of q_obs and q_critical when plotting
+
+* Upgrades
+** roomodel shape uncertainties
+- Not yet implemented
+
+** Conversion tools between models
+- Existing tool for combine <--> model
+- Need tools for model A <--> model B
+
+** Make CLs and Feldman-Cousins (and other) scans smarter
+- Use quadratic (linear?) extrapolations to better estimate points to test
+- Implement this in an abstract method such that different interval methods can use it
+
+** Allow rate uncertainties to come from the input workspaces
+Requested by Cole, a feature of Combine
+
+** Toy generation options
+Different toy generation techniques such as:
+- Generate using the pre-fit model
+- Generate using the post-fit model
+- Generate only, store in a workspace, and then use as the toy input in a separate run
+- Generate with fixed nuisance parameters (pre- or post-fit)
+- Generate with varied nuisance parameters (Bayesian)
+- Generate with fixed nuisance parameters, vary the constraint terms (Frequentist)
+
+** Add likelihood ratio-based interval construction
+- Can be with toys or asymptotic approximation
+- See starting point used by roomodel: python/backends/analysis_common.py:compute_likelihood_interval
+
+** Add a grid scan method
+Following Combine's MultiDimFit's grid scan option for any model parameter
+
+** Add more general toy-based limits
+Following Combine's HybridNew, define a method that takes in a test statistic option and does toys to evaluate intervals
+
+** Adjusting minimizer parameters
+** Allow for an optional coarse pre-fit minimizer run
+** Discrete nuisance parameter handling
+Allow for envelope method, configurable likelihood penalty given N(parameters)

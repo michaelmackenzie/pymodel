@@ -31,9 +31,6 @@ workspace_dict = {
     "observations": [
         {"name": "demo", "data": obs_shape.tolist()}
     ],
-    "measurements": [
-        {"name": "physics_search", "config": {"poi": "mu", "parameters": []}}
-    ],
     "version": "1.0.0"
 }
 
