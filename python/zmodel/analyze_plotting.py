@@ -3,7 +3,9 @@ import os
 import numpy as np
 import zfit
 from backends.analyze_plotting_common import (
+    plot_cls_scan as _plot_cls_scan_common,
     plot_delta_nll_scan as _plot_delta_nll_scan_common,
+    plot_feldman_cousins as _plot_feldman_cousins_common,
     plot_hist as _plot_hist_common,
 )
 from backends.zfit_parameter_utils import (
@@ -76,6 +78,27 @@ def _summary_dataset_plot(summary):
 def _summary_dataset_id(summary):
     return int(summary.get("dataset_id", 0))
 
+
+def _plot_feldman_cousins_construction(summary, plot_dir):
+    fc = summary.get("feldman_cousins")
+    if not isinstance(fc, dict):
+        return
+
+    grid = fc.get("grid", {})
+    if not isinstance(grid, dict):
+        return
+
+    out = os.path.join(plot_dir, f"dataset_{summary.get('dataset_id', 0)}_feldman_cousins.png")
+    _plot_feldman_cousins_common(
+        poi=grid.get("poi", []),
+        q_obs=grid.get("q_obs", []),
+        q_crit=grid.get("q_crit", []),
+        p_obs=grid.get("p_obs", []),
+        output_file=out,
+        poi_name=fc.get("poi_name", summary.get("poi_name", "POI")),
+        interval=fc.get("fc_interval"),
+        alpha=fc.get("alpha"),
+    )
 
 def _plot_categories(summary, fit_model):
     dataset_plot = _summary_dataset_plot(summary)
@@ -541,6 +564,8 @@ def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_pl
     for summary in plot_summaries:
         if "nll_scan" in summary:
             plot_nll_scan(summary, plot_dir)
+        _plot_cls_band(summary, plot_dir)
+        _plot_feldman_cousins_construction(summary, plot_dir)
 
 
 def plot_nll_scan(summary, plot_dir):

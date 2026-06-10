@@ -745,6 +745,7 @@ def compute_feldman_cousins(
 
     q_obs_values: List[Optional[float]] = []
     q_crit_values: List[Optional[float]] = []
+    p_obs_values: List[Optional[float]] = []
     toy_valid_counts: List[int] = []
     accepted: List[float] = []
 
@@ -786,11 +787,13 @@ def compute_feldman_cousins(
                 continue
 
             q_crit = float(np.percentile(np.asarray(toy_q, dtype=float), 100.0 * (1.0 - fc_alpha)))
+            p_obs  = float(np.mean(np.asarray(toy_q, dtype=float) > float(q_obs)))
             if float(q_obs) <= q_crit:
                 accepted.append(float(mu_test))
 
             q_obs_values.append(float(q_obs))
             q_crit_values.append(q_crit)
+            p_obs_values.append(p_obs)
 
     finally:
         # Restore observed data and original parameters
@@ -813,6 +816,7 @@ def compute_feldman_cousins(
             "poi": poi_grid.tolist(),
             "q_obs": q_obs_values,
             "q_crit": q_crit_values,
+            "p_obs": p_obs_values,
             "toy_valid": toy_valid_counts,
         },
         scan_points=n_scan,
@@ -843,6 +847,99 @@ def _compute_q_mu(backend, state: Any, mu_test: float) -> Optional[float]:
         return float(max(0.0, q))
     except Exception:
         return None
+
+
+def compute_likelihood_interval(
+    poi_values: np.ndarray,
+    delta_nll_values: np.ndarray,
+    alpha: float,
+    poi_min_limit: float = 0.0,
+) -> Optional[Tuple[float, float]]:
+    """Compute a confidence interval using the likelihood-ratio method (asymptotic).
+
+    This method applies the profile-likelihood asymptotic approximation where the
+    critical value q_crit is derived from the chi-square distribution as:
+
+        q_crit = (z_critical)^2
+
+    where z_critical is the standard normal quantile at the desired confidence level.
+
+    The observed test statistic at each POI value is:
+
+        q_obs = 2 * delta_nll
+
+    An interval point is accepted if q_obs <= q_crit. The confidence interval is
+    the union of all accepted points.
+
+    Parameters
+    ----------
+    poi_values : np.ndarray
+        Array of POI grid points (must be sorted ascending).
+    delta_nll_values : np.ndarray
+        Array of delta-NLL values (NLL relative to best fit).
+    alpha : float
+        Significance level (e.g., 0.05 for 95% CL).
+    poi_min_limit : float
+        Minimum POI value to consider in the interval.
+
+    Returns
+    -------
+    (lower, upper) : tuple of float or None
+        The confidence interval endpoints, or None if no points are accepted.
+
+    Notes
+    -----
+    This is an asymptotic approximation and not the true Feldman-Cousins Neyman
+    construction (which generates toys and derives per-point critical values).
+    For better coverage properties, use compute_feldman_cousins() instead.
+    """
+    from statistics import NormalDist
+
+    poi_values = np.asarray(poi_values, dtype=float)
+    delta_nll_values = np.asarray(delta_nll_values, dtype=float)
+    alpha = float(alpha)
+    poi_min_limit = float(poi_min_limit)
+
+    if poi_values.size == 0 or delta_nll_values.size != poi_values.size:
+        return None
+
+    # Mask finite values
+    mask = np.isfinite(poi_values) & np.isfinite(delta_nll_values)
+    if not np.any(mask):
+        return None
+
+    poi = poi_values[mask]
+    delta_nll = delta_nll_values[mask]
+
+    # Sort by POI
+    order = np.argsort(poi)
+    poi = poi[order]
+    delta_nll = delta_nll[order]
+
+    # Apply POI minimum limit
+    limit_mask = poi >= poi_min_limit
+    poi = poi[limit_mask]
+    delta_nll = delta_nll[limit_mask]
+
+    if poi.size == 0:
+        return None
+
+    # Compute critical value from chi-square distribution
+    # For one-sided test: q_crit = z_crit^2
+    z_crit = NormalDist().inv_cdf(1.0 - 0.5 * alpha)
+    q_crit = float(z_crit * z_crit)
+
+    # Observed test statistic: q_obs = 2 * delta_nll
+    q_obs = np.asarray(np.clip(2.0 * delta_nll, 0.0, None), dtype=float)
+
+    # Accept points where q_obs <= q_crit
+    accepted = q_obs <= q_crit
+    if not np.any(accepted):
+        return None
+
+    accepted_poi = poi[accepted]
+    interval = (float(np.min(accepted_poi)), float(np.max(accepted_poi)))
+    return interval if interval[0] < interval[1] or interval[0] == interval[1] else None
 
 
 # ===========================================================================

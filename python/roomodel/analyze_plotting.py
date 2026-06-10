@@ -192,6 +192,7 @@ def _plot_feldman_cousins_construction(summary, plot_dir):
         poi=grid.get("poi", []),
         q_obs=grid.get("q_obs", []),
         q_crit=grid.get("q_crit", []),
+        p_obs=grid.get("p_obs", []),
         output_file=os.path.join(plot_dir, f"dataset_{dataset_id:04d}_feldman_cousins.png"),
         poi_name=fc.get("poi_name", summary.get("poi_name", "POI")),
         interval=fc.get("fc_interval"),

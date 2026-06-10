@@ -133,6 +133,7 @@ def plot_feldman_cousins(
     poi,
     q_obs,
     q_crit,
+    p_obs,
     *,
     output_file,
     poi_name,
@@ -143,12 +144,14 @@ def plot_feldman_cousins(
 ):
     x_obs, y_obs = _finite_pair(poi, q_obs)
     x_crit, y_crit = _finite_pair(poi, q_crit)
-    if x_obs is None and x_crit is None:
+    x_p, y_p = _finite_pair(poi, p_obs)
+    if x_obs is None and x_crit is None and p_obs is None:
         return
 
     poi_arr = np.asarray(poi, dtype=float)
     q_obs_arr = np.asarray(q_obs, dtype=float)
     q_crit_arr = np.asarray(q_crit, dtype=float)
+    p_obs_arr = np.asarray(p_obs, dtype=float)
 
     plt = _plt()
     fig, ax = plt.subplots(figsize=(7.5, 5.5))
@@ -195,4 +198,44 @@ def plot_feldman_cousins(
     ax.legend(loc="best")
     plt.tight_layout()
     plt.savefig(output_file, dpi=150)
+    plt.close(fig)
+
+    # Make a version that is just the p-values
+    if x_obs is None or p_obs is None or len(x_obs) != len(p_obs):
+        return
+
+    plt = _plt()
+    fig, ax = plt.subplots(figsize=(7.5, 5.5))
+
+    ax.plot(x_obs, p_obs, color="#1F77B4", linewidth=2.0, marker="o", markersize=3.5, label=r"$p_{\mu}^{obs}$")
+
+    both = np.isfinite(poi_arr) & np.isfinite(q_obs_arr) & np.isfinite(q_crit_arr)
+    accepted = both & (q_obs_arr <= q_crit_arr)
+    if np.any(accepted):
+        ax.scatter(poi_arr[accepted], p_obs_arr[accepted], color="#2CA02C", s=24, zorder=4, label="Accepted grid points")
+
+    if isinstance(interval, (list, tuple)) and len(interval) == 2:
+        lo = float(interval[0])
+        hi = float(interval[1])
+        if np.isfinite(lo) and np.isfinite(hi) and hi >= lo:
+            ax.axvspan(lo, hi, color="#A1D99B", alpha=0.22, label="FC interval")
+            ax.axvline(lo, color="#2CA02C", linestyle=":", linewidth=1.3)
+            ax.axvline(hi, color="#2CA02C", linestyle=":", linewidth=1.3)
+
+    title = title_base
+    if alpha is not None:
+        try:
+            title += f" (alpha={float(alpha):.3g})"
+            ax.hlines(y=float(alpha), xmin=x_obs[0], xmax=x_obs[-1], color="#D62728", linestyles="--", linewidth=2.0)
+        except Exception:
+            pass
+
+    ax.set_title(title)
+    ax.set_xlabel(poi_name or "POI")
+    ax.set_ylabel(r"$p_\mu$")
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    plt.tight_layout()
+    output_p_file = output_file.split('.png')[0] + '_p.png'
+    plt.savefig(output_p_file, dpi=150)
     plt.close(fig)

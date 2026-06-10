@@ -799,6 +799,14 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0):
 
 
 def _apply_feldman_cousins_summary_from_scan(summary, alpha, scan_points, n_toys, poi_min_limit=0.0):
+    """Apply Feldman-Cousins confidence interval using the likelihood-ratio method.
+    
+    This is now a fallback for when a true Neyman-construction FC is not available.
+    For the true FC with toys, use _apply_feldman_cousins_true() which requires
+    access to the model and workspace.
+    """
+    from backends.analysis_common import compute_likelihood_interval
+    
     scan = summary.get("delta_nll_scan") or {}
     x = np.asarray(scan.get("x", []), dtype=float)
     y = np.asarray(scan.get("delta_nll", []), dtype=float)
@@ -809,53 +817,144 @@ def _apply_feldman_cousins_summary_from_scan(summary, alpha, scan_points, n_toys
         }
         return
 
+    interval = compute_likelihood_interval(x, y, float(alpha), poi_min_limit=float(poi_min_limit))
+    
+    # Compute q_obs for reporting
     mask = np.isfinite(x) & np.isfinite(y)
-    x = x[mask]
-    y = y[mask]
-    if x.size == 0:
-        summary["feldman_cousins"] = {
-            "fc_status": "failed: empty delta_nll_scan",
-            "alpha": float(alpha),
-        }
-        return
-
-    order = np.argsort(x)
-    x = x[order]
-    y = y[order]
-
-    limit_mask = x >= float(poi_min_limit)
-    x = x[limit_mask]
-    y = y[limit_mask]
-    if x.size == 0:
-        summary["feldman_cousins"] = {
-            "fc_status": "failed: no scan points above limit-poi-min",
-            "alpha": float(alpha),
-        }
-        return
-
+    x_finite = x[mask]
+    y_finite = y[mask]
+    q_obs = np.asarray(np.clip(2.0 * y_finite, 0.0, None), dtype=float)
+    
+    # Compute q_crit
     z_crit = NormalDist().inv_cdf(1.0 - 0.5 * float(alpha))
     q_crit = float(z_crit * z_crit)
-    q_obs = np.asarray(np.clip(2.0 * y, 0.0, None), dtype=float)
-    accepted = q_obs <= q_crit
-    interval = None
-    if np.any(accepted):
-        interval = [float(np.min(x[accepted])), float(np.max(x[accepted]))]
-
+    
     summary["feldman_cousins"] = {
         "fc_status": "ok" if interval is not None else "no-accepted-points",
         "alpha": float(alpha),
         "fc_interval": interval,
         "scan_points": int(scan_points),
-        "scan_max": float(np.max(x)),
+        "scan_max": float(np.max(x_finite)) if x_finite.size > 0 else float("nan"),
         "n_toys_per_point": int(n_toys),
         "grid": {
-            "poi": [float(v) for v in x.tolist()],
+            "poi": [float(v) for v in x_finite.tolist()],
             "q_obs": [float(v) for v in q_obs.tolist()],
-            "q_crit": [float(q_crit)] * int(x.size),
-            "toy_valid": [int(n_toys)] * int(x.size),
+            "q_crit": [float(q_crit)] * int(x_finite.size),
+            "toy_valid": [int(n_toys)] * int(x_finite.size),
         },
-        "note": "profile-likelihood approximation",
+        "note": "likelihood-ratio asymptotic method (not true Feldman-Cousins)",
     }
+
+
+def _apply_feldman_cousins_true(summary, alpha, scan_points, n_toys, poi_min_limit, 
+                                workspace, model, data, fit_model, dataset_id=0, seed=1234):
+    """Apply true Feldman-Cousins Neyman construction with toy generation per grid point.
+    
+    This uses the compute_feldman_cousins() algorithm from analysis_common.py which
+    generates toys at each POI value and derives per-point critical values.
+    
+    Parameters
+    ----------
+    summary : dict
+        Analysis summary to update with FC results.
+    alpha : float
+        Significance level (e.g., 0.05 for 95% CL).
+    scan_points : int
+        Number of grid points for the FC scan.
+    n_toys : int
+        Number of toy datasets per grid point.
+    poi_min_limit : float
+        Minimum POI value to consider.
+    workspace : RooWorkspace
+        The workspace containing the model and data.
+    model : RooPdf
+        The model PDF to use for fits and toy generation.
+    data : RooDataset or RooDataHist
+        The observed dataset (iteration dataset, not necessarily observed).
+    fit_model : roomodel.FitModel
+        Metadata about the fit model.
+    dataset_id : int
+        Seed component for reproducibility.
+    seed : int
+        Random seed.
+    """
+    from backends.path_bootstrap import ensure_repo_root_on_path
+    ensure_repo_root_on_path(__file__)
+    
+    from backends.analysis_common import compute_feldman_cousins
+    from backends.roomodel.analysis_backend import RooFitAnalysisBackend, RooFitAnalysisState
+    
+    try:
+        # Resolve POI and other required objects
+        poi = _resolve_poi_var(workspace, fit_model)
+        if poi is None or not bool(poi):
+            summary["feldman_cousins"] = {
+                "fc_status": "failed: could not resolve POI",
+                "alpha": float(alpha),
+            }
+            return
+        
+        poi_name = str(poi.GetName())
+        
+        # Create the backend adapter
+        backend = RooFitAnalysisBackend(
+            workspace=workspace,
+            model=model,
+            poi=poi,
+            poi_name=poi_name,
+            fit_model=fit_model,
+            observed_data=data,
+        )
+        
+        # Create the state object with current data set to the iteration dataset
+        state = RooFitAnalysisState(
+            workspace=workspace,
+            model=model,
+            poi=poi,
+            poi_name=poi_name,
+            fit_model=fit_model,
+            rng=np.random.default_rng(int(seed) + int(dataset_id)),
+            current_data=data,
+            observed_data=data,
+        )
+        
+        # Compute Feldman-Cousins interval with toys
+        fc_result = compute_feldman_cousins(
+            backend=backend,
+            state=state,
+            alpha=float(alpha),
+            scan_points=int(scan_points),
+            n_toys=int(n_toys),
+            scan_max=float(summary.get("delta_nll_scan", {}).get("x", [float("nan")])[-1]) or 5.0,
+            dataset_id=dataset_id,
+            seed=seed,
+        )
+        
+        # Convert FCResult to summary dict
+        interval = fc_result.interval
+        grid = fc_result.grid or {}
+        
+        summary["feldman_cousins"] = {
+            "fc_status": fc_result.status,
+            "alpha": float(alpha),
+            "fc_interval": list(interval) if interval is not None else None,
+            "scan_points": fc_result.scan_points,
+            "scan_max": fc_result.scan_max,
+            "n_toys_per_point": fc_result.n_toys,
+            "grid": {
+                "poi": grid.get("poi", []),
+                "q_obs": grid.get("q_obs", []),
+                "q_crit": grid.get("q_crit", []),
+                "p_obs": grid.get("p_obs", []),
+                "toy_valid": grid.get("toy_valid", []),
+            },
+            "note": "true Feldman-Cousins Neyman construction with toys",
+        }
+    except Exception as exc:
+        summary["feldman_cousins"] = {
+            "fc_status": f"failed: {str(exc)[:100]}",
+            "alpha": float(alpha),
+        }
 
 
 def _extract_fit_params(fit_result, workspace):
@@ -1557,12 +1656,18 @@ def run_analysis_cli(args):
         if args.cls is not None:
             _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
         if args.feldman_cousins is not None:
-            _apply_feldman_cousins_summary_from_scan(
+            _apply_feldman_cousins_true(
                 summary,
                 float(args.feldman_cousins),
                 int(fc_points),
                 int(args.fc_toys),
-                poi_min_limit=limit_poi_min,
+                limit_poi_min,
+                ws,
+                model,
+                observed_data,
+                fit_model,
+                dataset_id=0,
+                seed=int(args.seed) if hasattr(args, "seed") else 1234,
             )
         summary["dataset_id"] = 0
         summary["observed_fit"] = True
@@ -1635,12 +1740,18 @@ def run_analysis_cli(args):
         if args.cls is not None:
             _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
         if args.feldman_cousins is not None:
-            _apply_feldman_cousins_summary_from_scan(
+            _apply_feldman_cousins_true(
                 summary,
                 float(args.feldman_cousins),
                 int(fc_points),
                 int(args.fc_toys),
-                poi_min_limit=limit_poi_min,
+                limit_poi_min,
+                ws,
+                model,
+                asimov,
+                fit_model,
+                dataset_id=0,
+                seed=int(args.seed) if hasattr(args, "seed") else 1234,
             )
         summary["dataset_id"] = 0
         summary["asimov_fit"] = True
@@ -1668,12 +1779,18 @@ def run_analysis_cli(args):
             if args.cls is not None:
                 _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
             if args.feldman_cousins is not None:
-                _apply_feldman_cousins_summary_from_scan(
+                _apply_feldman_cousins_true(
                     summary,
                     float(args.feldman_cousins),
                     int(fc_points),
                     int(args.fc_toys),
-                    poi_min_limit=limit_poi_min,
+                    limit_poi_min,
+                    ws,
+                    model,
+                    toy_data,
+                    fit_model,
+                    dataset_id=idx,
+                    seed=int(args.seed) if hasattr(args, "seed") else 1234,
                 )
             summary["dataset_id"] = idx
             summaries.append(summary)
