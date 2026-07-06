@@ -126,7 +126,7 @@ def _resolve_obs_var(dataset_or_ws, workspace):
 
     for var in _iter_roo_collection(workspace.allVars()):
         name = str(var.GetName())
-        if name.startswith("obs_") or name.startswith("count_obs"):
+        if name.startswith("obs_") or name.startswith("count_obs") or name.startswith("dummy_x"):
             return var
 
     for var in _iter_roo_collection(workspace.allVars()):
@@ -556,7 +556,8 @@ def _channel_plot_payloads(workspace, model, fit_model, fit_data, fit_mode, binn
     return payloads
 
 
-def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=False, poi_scan_min=None):
+def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=False,
+                            poi_scan_min=None, asimov_data=None):
     ROOT = _get_root()
     if fit_data is None or poi_var is None or not bool(poi_var):
         return None
@@ -575,6 +576,14 @@ def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=Fa
         return None
     if nll is None or not bool(nll):
         return None
+
+    # Build a parallel Asimov NLL for computing per-point sigma(mu).
+    nll_asimov = None
+    if asimov_data is not None:
+        try:
+            nll_asimov = model.createNLL(asimov_data, *nll_opts)
+        except Exception:
+            nll_asimov = None
 
     poi_name = str(poi_var.GetName())
     poi_val = float(poi_var.getVal())
@@ -626,6 +635,7 @@ def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=Fa
     old_const = bool(poi_var.isConstant())
     old_val = poi_val
     last_success_nuisance = None
+    y_raw_asimov = [float("nan")] * len(xs)
     scan_order = sorted(range(len(xs)), key=lambda i: abs(float(xs[i]) - poi_val))
     try:
         for idx in scan_order:
@@ -669,6 +679,14 @@ def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=Fa
             except Exception:
                 nll_val = float("nan")
             y_raw[idx] = nll_val
+
+            # Evaluate Asimov NLL at the same profiled nuisance point.
+            if nll_asimov is not None and np.isfinite(nll_val):
+                try:
+                    y_raw_asimov[idx] = float(nll_asimov.getVal())
+                except Exception:
+                    pass
+
             if fit_status == 0 and np.isfinite(nll_val):
                 snapshot = {}
                 for var in nuisance_vars:
@@ -702,14 +720,45 @@ def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=Fa
         return None
     y_min = float(np.min(finite[mask]))
     y = [float(v - y_min) if np.isfinite(v) else float("nan") for v in y_raw]
+
+    # Asimov ΔNLL: reference at mu=0 (minimum of background-only NLL).
+    # NLL_asimov is offset so values are relative to the start point;
+    # we need to re-reference at mu=0 for per-point sigma computation.
+    y_asimov_raw = np.asarray(y_raw_asimov, dtype=float)
+    # Find the value at x=0 by interpolating or finding the nearest point.
+    y_asimov_at_0 = float("nan")
+    zero_dists = [abs(float(xs[i])) for i in range(len(xs)) if np.isfinite(y_asimov_raw[i])]
+    if zero_dists:
+        nearest_idx = min(
+            (i for i in range(len(xs)) if np.isfinite(y_asimov_raw[i])),
+            key=lambda i: abs(float(xs[i])),
+        )
+        if abs(float(xs[nearest_idx])) < 1e-6:
+            y_asimov_at_0 = float(y_asimov_raw[nearest_idx])
+        else:
+            # Interpolate to x=0 from the two nearest points
+            try:
+                valid_xs = [float(xs[i]) for i in range(len(xs)) if np.isfinite(y_asimov_raw[i])]
+                valid_ys = [float(y_asimov_raw[i]) for i in range(len(xs)) if np.isfinite(y_asimov_raw[i])]
+                y_asimov_at_0 = float(np.interp(0.0, valid_xs, valid_ys))
+            except Exception:
+                y_asimov_at_0 = float("nan")
+    y_asimov = [
+        float(v - y_asimov_at_0) if np.isfinite(v) and np.isfinite(y_asimov_at_0)
+        else float("nan")
+        for v in y_asimov_raw
+    ]
+
     x_out = []
     y_out = []
+    y_asimov_out = []
     status_out = []
-    for xv, yv, sv in zip(xs, y, status):
+    for xv, yv, ya, sv in zip(xs, y, y_asimov, status):
         if not np.isfinite(yv):
             continue
         x_out.append(float(xv))
         y_out.append(float(yv))
+        y_asimov_out.append(float(ya) if np.isfinite(ya) else float("nan"))
         status_out.append(int(sv))
     if not y_out:
         return None
@@ -717,7 +766,9 @@ def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=Fa
         "poi_name": poi_name,
         "x": x_out,
         "delta_nll": y_out,
+        "delta_nll_asimov": y_asimov_out,
         "status": status_out,
+        "poi_hat": float(poi_val),   # mu_hat at the time of the scan (free-fit result)
     }
 
 
@@ -795,7 +846,12 @@ def _compute_asimov_sigma(workspace, model, inner_model, fit_model, obs_var, fit
         if asimov is None or not bool(asimov):
             return None
 
-        # Restore state then free-fit the Asimov to get sigma_A
+        # Restore state then free-fit the Asimov to get sigma_A.
+        # Use RooMinimizer directly so we can run an explicit Hesse step
+        # after MIGRAD.  fitTo with Strategy(0) only runs MIGRAD, which
+        # does not correctly propagate nuisance-parameter uncertainty into
+        # the POI error — the Hesse matrix (inverse covariance) is needed
+        # to get the correct profiled sigma_A that includes nuisances.
         _restore_parameter_state(workspace, nominal_state)
         poi_var.setConstant(False)
 
@@ -805,13 +861,19 @@ def _compute_asimov_sigma(workspace, model, inner_model, fit_model, obs_var, fit
         except Exception:
             pass
 
-        fit_opts = [ROOT.RooFit.Save(True), ROOT.RooFit.PrintLevel(-1), ROOT.RooFit.Strategy(0)]
+        nll_opts = [ROOT.RooFit.Offset(True)]
         if can_extend:
-            fit_opts.append(ROOT.RooFit.Extended(True))
+            nll_opts.append(ROOT.RooFit.Extended(True))
 
-        res = model.fitTo(asimov, *fit_opts)
-        if res is None or not bool(res):
+        nll_asimov = model.createNLL(asimov, *nll_opts)
+        if nll_asimov is None or not bool(nll_asimov):
             return None
+
+        minim = ROOT.RooMinimizer(nll_asimov)
+        minim.setPrintLevel(-1)
+        minim.setStrategy(1)   # Strategy 1: MIGRAD + Hesse by default
+        migrad_status = minim.migrad()
+        hesse_status  = minim.hesse()
 
         sigma_a = None
         try:
@@ -834,6 +896,7 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0, sigma_asimov
     scan = summary.get("delta_nll_scan") or {}
     x = np.asarray(scan.get("x", []), dtype=float)
     y = np.asarray(scan.get("delta_nll", []), dtype=float)
+    y_asimov_raw = np.asarray(scan.get("delta_nll_asimov", []), dtype=float)
     if x.size == 0 or y.size != x.size:
         summary["cls_error"] = "missing delta_nll_scan"
         return
@@ -841,6 +904,10 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0, sigma_asimov
     mask = np.isfinite(x) & np.isfinite(y)
     x = x[mask]
     y = y[mask]
+    if y_asimov_raw.size == len(mask):
+        y_asimov_raw = y_asimov_raw[mask]
+    else:
+        y_asimov_raw = np.full(x.size, float("nan"))
     if x.size == 0:
         summary["cls_error"] = "empty delta_nll_scan"
         return
@@ -848,37 +915,66 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0, sigma_asimov
     order = np.argsort(x)
     x = x[order]
     y = y[order]
+    y_asimov_raw = y_asimov_raw[order]
 
-    # One-sided asymptotic CLs (Cowan et al. 2011, eqs. 12-13).
+    # One-sided asymptotic CLs (Cowan et al. 2011, RooStats AsymptoticCalculator).
     #
-    # Test statistic: q_mu = max(0, 2*DeltaNLL)
+    # Test statistic: q_mu_tilde (eq. 14) clamps the reference at mu=0 when
+    # mu_hat < 0:
+    #   q_mu_tilde = 2*(NLL(mu) - NLL(0))  when mu_hat < 0
+    #              = 2*(NLL(mu) - NLL(mu_hat))  when mu_hat >= 0
     #
-    # Full formula using the Asimov sensitivity q_mu_A = (mu/sigma_A)^2:
-    #   p_sb = 1 - Phi(sqrt(q_mu))
-    #   p_b  = 1 - Phi(sqrt(q_mu) - sqrt(q_mu_A))
-    #   CLs  = p_sb / p_b
+    # Per-point sigma from the Asimov test statistic:
+    #   q_A_mu    = 2*(NLL_asimov(mu) - NLL_asimov(0))  [Asimov referenced at 0]
+    #   sigma(mu) = mu / sqrt(q_A_mu)
+    # This is the formula used by RooStats AsymptoticCalculator.
+    # When Asimov ΔNLL is unavailable, fall back to the global sigma_asimov.
     #
-    # When sigma_asimov is unavailable we fall back to the simplified form
-    #   p_b = Phi(sqrt(q_mu))
-    # which assumes sqrt(q_mu_A) = sqrt(q_mu), i.e. the data equals the Asimov.
-    # The full formula gives the correct expected CLs band and a more accurate
-    # observed limit when the data deviates from the background expectation.
-    q_mu = np.clip(2.0 * y, 0.0, None)
-    sqrt_q_mu = np.sqrt(q_mu)
+    # p_sb = 1 - Phi(sqrt(q_mu_tilde_obs))        [prob under s+b of getting q >= q_obs]
+    # p_b  = 1 - Phi(sqrt(q_mu_tilde_obs) - mu/sigma(mu))  [prob under b-only]
+    # CLs  = p_sb / p_b
+
     norm = NormalDist()
-    p_sb = np.asarray([1.0 - norm.cdf(float(v)) for v in sqrt_q_mu], dtype=float)
+    have_sigma_global = (sigma_asimov is not None
+                         and np.isfinite(float(sigma_asimov))
+                         and float(sigma_asimov) > 0.0)
 
-    if sigma_asimov is not None and np.isfinite(float(sigma_asimov)) and float(sigma_asimov) > 0.0:
-        # q_mu_A(mu) = (mu / sigma_A)^2 varies across the scan
-        sqrt_q_mu_A = x / float(sigma_asimov)   # = mu / sigma_A, element-wise
-        p_b = np.asarray(
-            [1.0 - norm.cdf(float(sq) - float(sa))
-             for sq, sa in zip(sqrt_q_mu, sqrt_q_mu_A)],
-            dtype=float,
-        )
+    # Determine whether mu_hat < 0 from the stored best-fit value.
+    poi_hat = scan.get("poi_hat", None)
+    mu_hat_negative = (poi_hat is not None and float(poi_hat) < 0.0)
+
+    # Compute q_mu_tilde from the observed ΔNLL (clamped at mu=0 when mu_hat<0).
+    if mu_hat_negative:
+        delta_nll_at_0 = float(np.interp(0.0, x, y)) if x[0] <= 0.0 else 0.0
+        q_tilde = np.clip(2.0 * (y - delta_nll_at_0), 0.0, None)
     else:
-        # Simplified fallback: p_b = Phi(sqrt(q_mu))
-        p_b = np.asarray([norm.cdf(float(v)) for v in sqrt_q_mu], dtype=float)
+        q_tilde = np.clip(2.0 * y, 0.0, None)
+
+    # Compute per-point sigma(mu) = mu / sqrt(q_A_mu) from Asimov ΔNLL.
+    # y_asimov_raw stores ΔNLL_asimov = NLL_asimov(mu) - NLL_asimov(0).
+    have_asimov_scan = (y_asimov_raw.size == x.size
+                        and np.any(np.isfinite(y_asimov_raw)))
+    if have_asimov_scan:
+        q_A = np.clip(2.0 * y_asimov_raw, 0.0, None)
+        # sigma(mu) = mu / sqrt(q_A_mu); undefined at mu=0 or q_A=0.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            sigma_per_point = np.where(
+                (x > 0) & (q_A > 0),
+                x / np.sqrt(np.where(q_A > 0, q_A, 1.0)),
+                float(sigma_asimov) if have_sigma_global else float("nan"),
+            )
+    elif have_sigma_global:
+        sigma_per_point = np.full(x.size, float(sigma_asimov))
+    else:
+        sigma_per_point = np.full(x.size, float("nan"))
+
+    sqrt_q = np.sqrt(q_tilde)
+    p_sb = np.asarray([1.0 - norm.cdf(float(v)) for v in sqrt_q], dtype=float)
+    p_b = np.asarray(
+        [1.0 - norm.cdf(float(sq) - (float(xi) / float(sig)) if (np.isfinite(sig) and sig > 0) else float(sq))
+         for sq, xi, sig in zip(sqrt_q, x, sigma_per_point)],
+        dtype=float,
+    )
 
     # Protect against p_b == 0; CLs -> 0 there.
     cls_obs = np.where(p_b > 0.0, p_sb / p_b, 0.0)
@@ -891,11 +987,52 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0, sigma_asimov
         if float(cls_pos[-1]) <= float(alpha):
             limit = float(x_pos[-1])
 
+    # Expected CLs and ±1σ / ±2σ bands using the Asimov test statistic q_A(mu).
+    # For the expected (Asimov) case the test stat equals q_A, giving:
+    #   CLs_exp(mu) = [1 - Phi(sqrt(q_A))] / [1 - Phi(sqrt(q_A) - mu/sigma(mu))]
+    # The N-sigma bands are obtained by shifting the quantile of the background
+    # distribution by ±N standard deviations before converting to CLs:
+    #   sqrt_q_shifted(N) = max(0, sqrt(q_A) - N)  for the +N band (weaker limit)
+    #   sqrt_q_shifted(N) = sqrt(q_A) + N           for the -N band (stronger limit)
+    cls_expected_by_nsigma: dict = {}
+    if have_asimov_scan:
+        q_A_pos = q_A[pos]
+        sigma_pos = sigma_per_point[pos]
+        for n_sigma, label in [(0, "0"), (1, "+1"), (-1, "-1"), (2, "+2"), (-2, "-2")]:
+            sqrt_qA = np.sqrt(np.where(q_A_pos > 0, q_A_pos, 0.0))
+            # Shift sqrt(q_A) by -n_sigma (higher n_sigma = weaker limit = higher band)
+            sqrt_q_sh = np.clip(sqrt_qA - float(n_sigma), 0.0, None)
+            p_sb_exp = np.asarray([1.0 - norm.cdf(float(v)) for v in sqrt_q_sh], dtype=float)
+            p_b_exp = np.asarray(
+                [1.0 - norm.cdf(float(sq) - (float(xi)/float(sig) if (np.isfinite(sig) and sig > 0) else float(sq)))
+                 for sq, xi, sig in zip(sqrt_q_sh, x_pos, sigma_pos)],
+                dtype=float,
+            )
+            cls_exp_arr = np.where(p_b_exp > 0.0, p_sb_exp / p_b_exp, 0.0)
+            lim_exp = _interp_first_crossing(x_pos.tolist(), cls_exp_arr.tolist(), float(alpha))
+            if lim_exp is None and x_pos.size > 0 and float(cls_exp_arr[-1]) <= float(alpha):
+                lim_exp = float(x_pos[-1])
+            cls_expected_by_nsigma[label] = float(lim_exp) if (lim_exp is not None and np.isfinite(lim_exp)) else None
+
     summary["cls_alpha"] = float(alpha)
     summary["cls_scan_points"] = int(x.size)
     summary["cls_scan_max"] = float(np.max(x))
     if sigma_asimov is not None and np.isfinite(float(sigma_asimov)) and float(sigma_asimov) > 0.0:
         summary["cls_sigma_asimov"] = float(sigma_asimov)
+
+    # Populate expected quantiles in the format print_limit_summary_lines expects
+    # for the median and ±1σ / ±2σ bands.
+    if cls_expected_by_nsigma:
+        summary["cls_expected_quantiles"] = {
+            "50%":   cls_expected_by_nsigma.get("0"),
+            "16%":   cls_expected_by_nsigma.get("-1"),
+            "84%":   cls_expected_by_nsigma.get("+1"),
+            "2.5%":  cls_expected_by_nsigma.get("-2"),
+            "97.5%": cls_expected_by_nsigma.get("+2"),
+        }
+        if cls_expected_by_nsigma.get("0") is not None:
+            summary["cls_expected_median"] = cls_expected_by_nsigma["0"]
+
     summary["cls_curve"] = {
         "pois": [float(v) for v in x.tolist()],
         "observed": [float(v) for v in cls_obs.tolist()],
@@ -1337,6 +1474,7 @@ def _run_single_fit(
     limit_scan_full_range=False,
     limit_scan_poi_min=None,
     inner_model=None,
+    asimov_data=None,
 ):
     ROOT = _get_root()
     obs = _resolve_obs_var(data, workspace) or input_obs_var
@@ -1464,7 +1602,12 @@ def _run_single_fit(
             n_points=scan_points,
             full_range=bool(limit_scan_full_range),
             poi_scan_min=limit_scan_poi_min,
+            asimov_data=asimov_data,
         )
+        # Overwrite poi_hat with the actual free-fit result so the CLs
+        # formula can correctly detect whether mu_hat < 0.
+        if delta_nll_scan is not None and poi_fit is not None:
+            delta_nll_scan["poi_hat"] = float(poi_fit)
 
     # Extract floating parameter values and uncertainties from fit result
     fit_params, fit_param_unc = _extract_fit_params(fit_result, workspace)
@@ -1504,25 +1647,13 @@ def _build_asimov_for_counting(workspace, poi_var=None, poi_val=None):
     poi_var:
         Optional ``RooRealVar`` for the signal-strength POI.  When provided
         together with *poi_val*, the POI is temporarily set to *poi_val*
-        before evaluating yields and restored afterwards.  This allows the
-        caller to request a background-only (``poi_val=0``) or signal-plus-
-        background Asimov without modifying the workspace persistently.
+        before evaluating yields and restored afterwards.
     poi_val:
-        Float value to assign to *poi_var* during yield evaluation.  Ignored
-        when *poi_var* is ``None``.
+        Float value to assign to *poi_var* during yield evaluation.
 
-    Returns a single-entry ``RooDataSet`` with all count observables set to
-    their expected (continuous) values, or ``None`` if no ``count_obs_*``
-    variables exist in the workspace.
+    Returns a ``RooDataSet`` with one row per channel (each set to the
+    expected yield), or ``None`` if no ``count_obs_*`` variables exist.
     """
-    ROOT = _get_root()
-    count_vars = []
-    for var in _iter_roo_collection(workspace.allVars()):
-        if str(var.GetName()).startswith("count_obs_"):
-            count_vars.append(var)
-    if not count_vars:
-        return None
-
     # Temporarily fix POI at the requested value for yield evaluation.
     saved_poi_val = None
     saved_poi_const = None
@@ -1536,36 +1667,114 @@ def _build_asimov_for_counting(workspace, poi_var=None, poi_val=None):
             saved_poi_val = None
 
     try:
-        count_obs_set = ROOT.RooArgSet()
-        for var in count_vars:
-            count_obs_set.add(var)
-
-        for var in count_vars:
-            name = str(var.GetName())
-            channel = name.split("count_obs_", 1)[1] if "count_obs_" in name else ""
+        def get_expected(channel):
             mean_obj = workspace.function(f"yield_total__{channel}")
             if mean_obj is None or not bool(mean_obj):
                 mean_obj = workspace.var(f"yield_total__{channel}")
             if mean_obj is not None and bool(mean_obj):
-                # Use the continuous expected yield directly — RooPoisson is
-                # constructed with setNoRounding(True) so non-integer n values
-                # are evaluated via the gamma-function generalisation.
-                var.setVal(max(float(mean_obj.getVal()), 0.0))
-            # If the yield function is not found, leave the variable at its
-            # current value (set from the card observation row at build time).
+                return max(float(mean_obj.getVal()), 0.0)
+            # Fallback: use current count_obs value
+            obs_var = workspace.var(f"count_obs_{channel}")
+            return float(obs_var.getVal()) if obs_var and bool(obs_var) else 0.0
 
-        asimov = ROOT.RooDataSet("asimov_count_data", "asimov_count_data", count_obs_set)
-        asimov.add(count_obs_set)
-        return asimov
+        return _build_counting_datahist(
+            workspace, "asimov_count_data", "asimov_count_data", get_expected
+        )
 
     finally:
-        # Restore POI to its state before we changed it.
         if saved_poi_val is not None and poi_var is not None:
             try:
                 poi_var.setVal(saved_poi_val)
                 poi_var.setConstant(saved_poi_const)
             except Exception:
                 pass
+
+
+def _counting_channel_cat(workspace):
+    """Return the channelCat RooCategory if present, else None."""
+    try:
+        cat = workspace.cat("channelCat")
+        return cat if cat and bool(cat) else None
+    except Exception:
+        return None
+
+
+def _build_counting_datahist(workspace, name, title, count_getter):
+    """Build a combined per-channel RooDataHist for the extended counting model.
+
+    For each channel, looks up ``dummy_x_<channel>`` (the single-bin dummy
+    observable) and sets its bin count to the value returned by
+    ``count_getter(channel)``.  Combines all channels into one
+    ``RooDataHist`` via ``RooFit.Index(channelCat)`` + ``RooFit.Import``.
+
+    Returns a ``RooDataHist`` when ``channelCat`` and ``dummy_x_*`` variables
+    exist (extended counting model), or ``None`` for other model types.
+    """
+    ROOT = _get_root()
+    channel_cat = _counting_channel_cat(workspace)
+    if channel_cat is None:
+        return None
+
+    channel_data = {}
+    dummy_x_vars = {}
+
+    # Collect channel labels from category
+    channels = []
+    try:
+        for state in channel_cat:
+            channels.append(str(state.first))
+    except Exception:
+        return None
+
+    if not channels:
+        return None
+
+    for ch in channels:
+        dummy_x = workspace.var(f"dummy_x_{ch}")
+        if dummy_x is None or not bool(dummy_x):
+            return None
+        dummy_x_vars[ch] = dummy_x
+        dummy_x.setBins(1)
+        obs_set = ROOT.RooArgSet(dummy_x)
+        dh = ROOT.RooDataHist(f"dh_{ch}", f"dh_{ch}", obs_set)
+        dummy_x.setVal(0.5)
+        count = count_getter(ch)
+        dh.add(obs_set, float(count))
+        channel_data[ch] = dh
+
+    # Build a union observable list
+    obs_list = ROOT.RooArgList()
+    seen = set()
+    for ch in channels:
+        xname = f"dummy_x_{ch}"
+        if xname not in seen:
+            obs_list.add(dummy_x_vars[ch])
+            seen.add(xname)
+
+    cmd_args = [ROOT.RooFit.Index(channel_cat)]
+    for ch, dh in channel_data.items():
+        cmd_args.append(ROOT.RooFit.Import(ch, dh))
+
+    combined = ROOT.RooDataHist(name, title, obs_list, *cmd_args)
+    return combined
+
+
+def _build_observed_for_counting(workspace):
+    """Build a RooDataHist from the observed counts stored in workspace variables.
+
+    For the extended counting model, reads ``count_obs_<channel>`` values
+    and populates a per-channel ``RooDataHist`` over the dummy observable.
+
+    Returns a ``RooDataHist`` for the extended model, or ``None`` when no
+    counting model structure is found.
+    """
+    def get_observed(channel):
+        obs_var = workspace.var(f"count_obs_{channel}")
+        return float(obs_var.getVal()) if obs_var and bool(obs_var) else 0.0
+
+    return _build_counting_datahist(
+        workspace, "observed_count_data", "observed_count_data", get_observed
+    )
 
 
 def _generate_dataset(workspace, model, dataset_hint, obs_var, fit_mode, binned_bins):
@@ -1577,33 +1786,18 @@ def _generate_dataset(workspace, model, dataset_hint, obs_var, fit_mode, binned_
         if toy_sim is not None and bool(toy_sim):
             return toy_sim
 
-    # Counting-mode fallback: build one-event datasets with explicit Poisson
-    # draws for each count observable. This avoids RooFit generation paths that
-    # can drop dimensions or return degenerate toys for composite count models.
-    count_vars = []
-    for var in _iter_roo_collection(workspace.allVars()):
-        if str(var.GetName()).startswith("count_obs_"):
-            count_vars.append(var)
-    if count_vars:
-        count_obs_set = ROOT.RooArgSet()
-        for var in count_vars:
-            count_obs_set.add(var)
+    # Counting-mode fallback: build per-channel DataHist with Poisson draws.
+    rng = np.random.default_rng()
 
-        rng = np.random.default_rng()
-        for var in count_vars:
-            name = str(var.GetName())
-            channel = name.split("count_obs_", 1)[1] if "count_obs_" in name else ""
-            mean_obj = workspace.function(f"yield_total__{channel}")
-            if mean_obj is None or not bool(mean_obj):
-                mean_obj = workspace.var(f"yield_total__{channel}")
-            if mean_obj is None or not bool(mean_obj):
-                mean_val = max(float(var.getVal()), 0.0)
-            else:
-                mean_val = max(float(mean_obj.getVal()), 0.0)
-            var.setVal(float(rng.poisson(mean_val)))
+    def get_poisson(channel):
+        mean_obj = workspace.function(f"yield_total__{channel}")
+        if mean_obj is None or not bool(mean_obj):
+            mean_obj = workspace.var(f"yield_total__{channel}")
+        mean_val = max(float(mean_obj.getVal()), 0.0) if (mean_obj is not None and bool(mean_obj)) else 0.0
+        return float(rng.poisson(mean_val))
 
-        toy = ROOT.RooDataSet("toy_count_data", "toy_count_data", count_obs_set)
-        toy.add(count_obs_set)
+    toy = _build_counting_datahist(workspace, "toy_count_data", "toy_count_data", get_poisson)
+    if toy is not None and bool(toy):
         return toy
 
     resolved_obs_set = _model_observable_set(workspace, model, dataset_hint, obs_var=obs_var)
@@ -2013,6 +2207,14 @@ def run_analysis_cli(args):
     # Restore original args value
     args.set_parameter_ranges = original_ranges
     _enforce_physical_poi_bounds(ws, fit_model)
+
+    # For counting experiments the workspace stores no RooDataSet; the observed
+    # counts are baked into count_obs_<channel> RooRealVar values at build time.
+    # Recover them so the analysis treats them as observed data rather than
+    # falling back to toy generation.
+    if observed_data is None:
+        observed_data = _build_observed_for_counting(ws)
+
     # Use inner_model (the RooSimultaneous / channel PDF, unwrapped from any
     # constraint wrapper) for observable resolution and dataset generation.
     obs_var = _resolve_obs_var(observed_data, ws)
@@ -2048,7 +2250,16 @@ def run_analysis_cli(args):
 
     cls_toys = int(getattr(args, "cls_toys", 0) or 0)
 
-    # Compute Asimov sigma once for the full asymptotic CLs formula.
+    # Build the background-only Asimov dataset once for the CLs scan.
+    # This is used for per-point sigma(mu) = mu/sqrt(q_A_mu), which is the
+    # formula used by RooStats AsymptoticCalculator.
+    cls_asimov_data = None
+    if args.cls is not None and cls_toys == 0:
+        _asimov_poi = _resolve_poi_var(ws, fit_model)
+        cls_asimov_data = _build_asimov_for_counting(ws, poi_var=_asimov_poi, poi_val=0.0)
+        _restore_parameter_state(ws, nominal_param_state)
+
+    # Compute Asimov sigma once for reporting and as fallback.
     # Only needed when cls_toys == 0 (asymptotic path).
     sigma_asimov = None
     if args.cls is not None and cls_toys == 0:
@@ -2075,6 +2286,7 @@ def run_analysis_cli(args):
             limit_scan_full_range=limit_scan_full_range,
             limit_scan_poi_min=limit_poi_min,
             inner_model=inner_model,
+            asimov_data=cls_asimov_data,
         )
         if args.cls is not None:
             if cls_toys > 0:

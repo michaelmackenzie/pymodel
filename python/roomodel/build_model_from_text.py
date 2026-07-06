@@ -402,27 +402,45 @@ def _build_counting_workspace(card: CardSpec):
         )
         getattr(ws, "import")(expected, ROOT.RooFit.RecycleConflictNodes())
 
-        obs_var = ws.var(f"count_obs_{channel}")
         expected_obj = ws.function(f"yield_total__{channel}") or ws.var(f"yield_total__{channel}")
-        channel_pdf = ROOT.RooPoisson(
-            f"pdf_total__{channel}", f"pdf_total__{channel}",
-            obs_var, expected_obj,
-        )
-        # Allow non-integer observed counts so that Asimov datasets (which use
-        # the continuous expected yield as the "observed" value) are evaluated
-        # correctly via the gamma-function generalisation of the Poisson PDF.
-        channel_pdf.setNoRounding(True)
-        getattr(ws, "import")(channel_pdf, ROOT.RooFit.RecycleConflictNodes())
-        channel_model_names.append(f"pdf_total__{channel}")
 
-    channel_models = ROOT.RooArgList()
-    for model_name in channel_model_names:
-        model_pdf = ws.pdf(model_name)
-        if model_pdf is None:
-            raise ValueError(f"Missing channel model '{model_name}' in counting workspace")
-        channel_models.add(model_pdf)
+        # Build an extended shape model that mimics test_card.C's approach:
+        #   RooUniform over a dummy x ∈ [0,1] with one bin, extended by yield_total.
+        # This makes the model extended so createNLL includes the -lambda Poisson
+        # normalization term.  Without it, NLL = -n*log(lambda) is monotonically
+        # decreasing in mu when mu_hat < 0, making q_mu = 0 everywhere and the
+        # CLs scan meaningless.
+        dummy_x_name = f"dummy_x_{channel}"
+        dummy_x = ROOT.RooRealVar(dummy_x_name, dummy_x_name, 0.5, 0.0, 1.0)
+        dummy_x.setBins(1)
+        getattr(ws, "import")(dummy_x)
 
-    sim_pdf = ROOT.RooProdPdf("simPdf", "simPdf", channel_models)
+        flat_name = f"flat_pdf_{channel}"
+        # Build RooArgSet from the local variable (workspace pointer may not dereference)
+        dummy_x_set = ROOT.RooArgSet(dummy_x)
+        flat_pdf = ROOT.RooUniform(flat_name, flat_name, dummy_x_set)
+        getattr(ws, "import")(flat_pdf, ROOT.RooFit.RecycleConflictNodes())
+
+        ext_name = f"ext_pdf_total__{channel}"
+        ext_pdf = ROOT.RooExtendPdf(ext_name, ext_name,
+                                    ws.pdf(flat_name), expected_obj)
+        getattr(ws, "import")(ext_pdf, ROOT.RooFit.RecycleConflictNodes())
+        channel_model_names.append(ext_name)
+
+    # Use RooSimultaneous over a channel-index category so the model is extended
+    # (each channel PDF is a RooExtendPdf) and fitTo/createNLL with Extended(True)
+    # handles the Poisson normalization correctly across all channels.
+    channel_cat = ROOT.RooCategory("channelCat", "Channel index")
+    for ch in card.channels:
+        channel_cat.defineType(ch)
+    getattr(ws, "import")(channel_cat)
+
+    sim_pdf = ROOT.RooSimultaneous("simPdf", "simPdf", ws.cat("channelCat"))
+    for ch, model_name in zip(card.channels, channel_model_names):
+        ch_pdf = ws.pdf(model_name)
+        if ch_pdf is None:
+            raise ValueError(f"Missing extended channel model '{model_name}' in counting workspace")
+        sim_pdf.addPdf(ch_pdf, ch)
     getattr(ws, "import")(sim_pdf, ROOT.RooFit.RecycleConflictNodes())
 
     final_pdf_name = _wrap_with_constraints(ws, "simPdf", constraint_pdf_names)

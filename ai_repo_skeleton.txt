@@ -1997,7 +1997,7 @@ def _resolve_channel_obs_var(workspace, channel_pdf):
     ... # [Logic Trimming]
 def _channel_plot_payloads(workspace, model, fit_model, fit_data, fit_mode, binned_bins):
     ... # [Logic Trimming]
-def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=False, poi_scan_min=None):
+def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=False, poi_scan_min=None, asimov_data=None):
     ... # [Logic Trimming]
 def _interp_first_crossing(x_vals, y_vals, threshold):
     ... # [Logic Trimming]
@@ -2088,7 +2088,7 @@ Returns
 tuple of (dict, dict)
     (param_values, param_uncertainties) with all floating parameters"""
     ... # [Logic Trimming]
-def _run_single_fit(workspace, model, data, fit_model, fit_mode, binned_bins, input_obs_var=None, collect_plot_details=False, limit_scan_points=None, limit_scan_full_range=False, limit_scan_poi_min=None, inner_model=None):
+def _run_single_fit(workspace, model, data, fit_model, fit_mode, binned_bins, input_obs_var=None, collect_plot_details=False, limit_scan_points=None, limit_scan_full_range=False, limit_scan_poi_min=None, inner_model=None, asimov_data=None):
     ... # [Logic Trimming]
 def _build_asimov_for_counting(workspace, poi_var=None, poi_val=None):
     """Build an Asimov dataset for a counting experiment.
@@ -2106,16 +2106,35 @@ workspace:
 poi_var:
     Optional ``RooRealVar`` for the signal-strength POI.  When provided
     together with *poi_val*, the POI is temporarily set to *poi_val*
-    before evaluating yields and restored afterwards.  This allows the
-    caller to request a background-only (``poi_val=0``) or signal-plus-
-    background Asimov without modifying the workspace persistently.
+    before evaluating yields and restored afterwards.
 poi_val:
-    Float value to assign to *poi_var* during yield evaluation.  Ignored
-    when *poi_var* is ``None``.
+    Float value to assign to *poi_var* during yield evaluation.
 
-Returns a single-entry ``RooDataSet`` with all count observables set to
-their expected (continuous) values, or ``None`` if no ``count_obs_*``
-variables exist in the workspace."""
+Returns a ``RooDataSet`` with one row per channel (each set to the
+expected yield), or ``None`` if no ``count_obs_*`` variables exist."""
+    ... # [Logic Trimming]
+def _counting_channel_cat(workspace):
+    """Return the channelCat RooCategory if present, else None."""
+    ... # [Logic Trimming]
+def _build_counting_datahist(workspace, name, title, count_getter):
+    """Build a combined per-channel RooDataHist for the extended counting model.
+
+For each channel, looks up ``dummy_x_<channel>`` (the single-bin dummy
+observable) and sets its bin count to the value returned by
+``count_getter(channel)``.  Combines all channels into one
+``RooDataHist`` via ``RooFit.Index(channelCat)`` + ``RooFit.Import``.
+
+Returns a ``RooDataHist`` when ``channelCat`` and ``dummy_x_*`` variables
+exist (extended counting model), or ``None`` for other model types."""
+    ... # [Logic Trimming]
+def _build_observed_for_counting(workspace):
+    """Build a RooDataHist from the observed counts stored in workspace variables.
+
+For the extended counting model, reads ``count_obs_<channel>`` values
+and populates a per-channel ``RooDataHist`` over the dummy observable.
+
+Returns a ``RooDataHist`` for the extended model, or ``None`` when no
+counting model structure is found."""
     ... # [Logic Trimming]
 def _generate_dataset(workspace, model, dataset_hint, obs_var, fit_mode, binned_bins):
     ... # [Logic Trimming]

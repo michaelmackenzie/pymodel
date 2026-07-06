@@ -69,19 +69,23 @@ def print_limit_summary_lines(
 ):
     if "cls_observed" in summary and summary.get("cls_observed") is not None:
         print(f"  CLs observed upper limit: {summary['cls_observed']:.4f}")
+    if "cls_expected_median" in summary and summary.get("cls_expected_median") is not None:
+        print(f"  CLs expected upper limit: {summary['cls_expected_median']:.4f}")
     if include_scan_details and "cls_scan_points" in summary:
         print(f"  CLs scan points: {summary['cls_scan_points']}")
     if include_scan_details and "cls_scan_max" in summary:
         print(f"  CLs scan max: {summary['cls_scan_max']:.4g}")
     if "cls_expected_quantiles" in summary:
         q = summary["cls_expected_quantiles"]
+        def _fmt(v):
+            return f"{v:{expected_precision}}" if v is not None and v == v else "n/a"
         print(
             f"  {expected_label}: "
-            f"2.5%={q.get('2.5%'):{expected_precision}}, "
-            f"16%={q.get('16%'):{expected_precision}}, "
-            f"50%={q.get('50%'):{expected_precision}}, "
-            f"84%={q.get('84%'):{expected_precision}}, "
-            f"97.5%={q.get('97.5%'):{expected_precision}}"
+            f"2.5%={_fmt(q.get('2.5%'))}, "
+            f"16%={_fmt(q.get('16%'))}, "
+            f"50%={_fmt(q.get('50%'))}, "
+            f"84%={_fmt(q.get('84%'))}, "
+            f"97.5%={_fmt(q.get('97.5%'))}"
         )
     if include_expected_error and "cls_expected_error" in summary:
         print(f"  CLs expected failed: {summary['cls_expected_error']}")
