@@ -26,7 +26,7 @@ def _get_root():
 
 OBS_MIN = 100.0
 OBS_MAX = 110.0
-RATES = {"sig": 12.0, "bkg": 80.0}
+RATES = {"sig": 12.0, "bkg": 800.0}
 RNG_SEED = 42
 
 
@@ -50,29 +50,35 @@ def build_shapes_workspace():
     bkg_lam.setConstant(True)
     bkg_pdf = ROOT.RooExponential("bkg", "Background Exponential", mass, bkg_lam)
 
-    for obj in (mass, sig_mu, sig_sigma, sig_pdf, bkg_lam, bkg_pdf):
+    # Create a total model to generate toy data with
+    sig_yield = ROOT.RooRealVar("sig_yield", "Signal yield", RATES["sig"])
+    bkg_yield = ROOT.RooRealVar("bkg_yield", "Background yield", RATES["bkg"])
+    r         = ROOT.RooRealVar("r", "r", 1., -100., 100.)
+    sig_yield_eff = ROOT.RooFormulaVar("sig_yield_eff", "@0*@1", ROOT.RooArgList(r, sig_yield))
+    total_pdf = ROOT.RooAddPdf("total_pdf", "Total PDF",
+                               ROOT.RooArgList(sig_pdf, bkg_pdf),
+                               ROOT.RooArgList(sig_yield_eff, bkg_yield))
+    rng = np.random.default_rng(RNG_SEED)
+    n_data = int(rng.poisson(RATES["sig"] + RATES["bkg"]))
+    data_obs = total_pdf.generate(ROOT.RooArgSet(mass), n_data)
+    data_obs.SetName("data_obs")
+    
+    # Import the model to the workspace
+    for obj in (mass, sig_mu, sig_sigma, sig_pdf, bkg_lam, bkg_pdf, data_obs):
         getattr(ws, "import")(obj)
 
-    # Generate observed toy data (sig + bkg mixture)
-    rng = np.random.default_rng(RNG_SEED)
-    n_sig = int(rng.poisson(RATES["sig"]))
-    n_bkg = int(rng.poisson(RATES["bkg"]))
-
-    sig_obs = rng.normal(105.0, 0.35, n_sig)
-    sig_obs = sig_obs[(sig_obs >= OBS_MIN) & (sig_obs <= OBS_MAX)]
-    bkg_obs = rng.exponential(4.0, n_bkg * 3)
-    bkg_obs = OBS_MAX - bkg_obs
-    bkg_obs = bkg_obs[(bkg_obs >= OBS_MIN) & (bkg_obs <= OBS_MAX)][:n_bkg]
-
-    all_obs = np.concatenate([sig_obs, bkg_obs])
-    rng.shuffle(all_obs)
-
-    ws_mass = ws.var("mass")
-    data_obs = ROOT.RooDataSet("data_obs", "Observed data", ROOT.RooArgSet(ws_mass))
-    for val in all_obs:
-        ws_mass.setVal(float(val))
-        data_obs.add(ROOT.RooArgSet(ws_mass))
-    getattr(ws, "import")(data_obs)
+    # Plot the model
+    sig_mu_offset.setConstant(True)
+    total_pdf.fitTo(data_obs)
+    frame = mass.frame()
+    data_obs.plotOn(frame)
+    total_pdf.plotOn(frame)
+    total_pdf.plotOn(frame, ROOT.RooFit.Components("sig_pdf"))
+    total_pdf.plotOn(frame, ROOT.RooFit.Components("bkg_pdf"))
+    ROOT.gROOT.SetBatch(True)
+    c = ROOT.TCanvas()
+    frame.Draw()
+    c.SaveAs("simple_shapes.png")
 
     return ws
 

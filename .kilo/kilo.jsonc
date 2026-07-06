@@ -1,0 +1,7 @@
+{
+  "project_name": "Pymodel - Multi-Backend HEP Driver",
+  "system_prompt": "You are assisting with 'pymodel', a unified HEP statistical toolkit with three distinct implementations: hfmodel (pyhf), zmodel (zfit/hepstats), and roomodel (pyROOT/RooFit). They use shared backend card parsing logic but separate execution drivers. Refer to 'ai_repo_skeleton.txt' to see the exact structure of python/backends/ and python/pymodel. Never mix backend idioms; verify whether the current task targets a shared base class or a package-specific adapter implementation. IMPORTANT: The python environment and path variables are local; all new terminal paths must be initialized by running 'source setup_env.sh'. Ensure any terminal run commands or instructions you generate include this sourcing step.",
+  "auto_include_files": [
+    "ai_repo_skeleton.txt"
+  ]
+}

@@ -373,11 +373,11 @@ def _fit_component_plot_payload(workspace, model, fit_model, fit_data, obs_var, 
         except Exception:
             return None
     else:
-        # For non-simultaneous models, extract channel name from yield variable naming
+        # For non-simultaneous models, extract channel name from yield/rate variable naming
         import re
         for var in _iter_roo_collection(workspace.allVars()):
             name = str(var.GetName())
-            match = re.search(r'yield_\w+__(\w+)', name)
+            match = re.search(r'(?:yield|rate)_\w+__(\w+)', name)
             if match:
                 channel_name = match.group(1)
                 break
@@ -385,7 +385,7 @@ def _fit_component_plot_payload(workspace, model, fit_model, fit_data, obs_var, 
             # Try to find from functions
             for func in _iter_roo_collection(workspace.allFunctions()):
                 name = str(func.GetName())
-                match = re.search(r'yield_\w+__(\w+)', name)
+                match = re.search(r'(?:yield|rate)_\w+__(\w+)', name)
                 if match:
                     channel_name = match.group(1)
                     break
@@ -435,6 +435,8 @@ def _fit_component_plot_payload(workspace, model, fit_model, fit_data, obs_var, 
                 # Try just process name
                 term_pdf = workspace.pdf(str(process))
             term_yield = _get_yield_obj(f"yield_{process}__{channel_name}")
+            if term_yield is None or not bool(term_yield):
+                term_yield = _get_yield_obj(f"rate_{process}__{channel_name}")
             if term_pdf is None or not bool(term_pdf) or term_yield is None:
                 continue
 
@@ -749,7 +751,86 @@ def _interp_first_crossing(x_vals, y_vals, threshold):
     return None
 
 
-def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0):
+def _compute_asimov_sigma(workspace, model, inner_model, fit_model, obs_var, fit_mode, binned_bins):
+    """Fit the mu=0 Asimov dataset and return the POI uncertainty sigma_A.
+
+    This gives the sensitivity measure used in the full asymptotic CLs formula
+    (Cowan et al. 2011): q_mu_A = (mu / sigma_A)^2.
+
+    Returns sigma_A (float > 0) or None on failure.
+    """
+    ROOT = _get_root()
+
+    # Build mu=0 Asimov dataset from inner_model (unwrapped from constraint wrapper)
+    poi_var = _resolve_poi_var(workspace, fit_model)
+    if poi_var is None or not bool(poi_var):
+        return None
+
+    # Snapshot current state
+    nominal_state = _capture_nominal_parameter_state(workspace, model, None, obs_var=obs_var)
+
+    try:
+        inner_model_name = str(inner_model.ClassName()) if hasattr(inner_model, "ClassName") else ""
+        # Try counting path first — works for RooProdPdf of Poisson channels.
+        # Pass poi_var + poi_val=0 so the function sets mu=0 internally and
+        # restores it, keeping the workspace consistent afterwards.
+        asimov = _build_asimov_for_counting(workspace, poi_var=poi_var, poi_val=0.0)
+        if asimov is None or not bool(asimov):
+            if "RooSimultaneous" in inner_model_name:
+                asimov = _build_asimov_for_simultaneous(workspace, inner_model)
+                if asimov is None or not bool(asimov):
+                    obs_set = _model_observable_set(workspace, inner_model, None, obs_var=obs_var)
+                    if obs_set is None:
+                        return None
+                    asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+            else:
+                if obs_var is None:
+                    return None
+                asimov = inner_model.generateBinned(
+                    ROOT.RooArgSet(obs_var),
+                    ROOT.RooFit.Binning(int(binned_bins), float(obs_var.getMin()), float(obs_var.getMax())),
+                    ROOT.RooFit.ExpectedData(True),
+                )
+
+        if asimov is None or not bool(asimov):
+            return None
+
+        # Restore state then free-fit the Asimov to get sigma_A
+        _restore_parameter_state(workspace, nominal_state)
+        poi_var.setConstant(False)
+
+        can_extend = False
+        try:
+            can_extend = bool(model.canBeExtended())
+        except Exception:
+            pass
+
+        fit_opts = [ROOT.RooFit.Save(True), ROOT.RooFit.PrintLevel(-1), ROOT.RooFit.Strategy(0)]
+        if can_extend:
+            fit_opts.append(ROOT.RooFit.Extended(True))
+
+        res = model.fitTo(asimov, *fit_opts)
+        if res is None or not bool(res):
+            return None
+
+        sigma_a = None
+        try:
+            sigma_a = float(poi_var.getError())
+        except Exception:
+            pass
+
+        if sigma_a is None or not np.isfinite(sigma_a) or sigma_a <= 0.0:
+            return None
+
+        return sigma_a
+
+    except Exception:
+        return None
+    finally:
+        _restore_parameter_state(workspace, nominal_state)
+
+
+def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0, sigma_asimov=None):
     scan = summary.get("delta_nll_scan") or {}
     x = np.asarray(scan.get("x", []), dtype=float)
     y = np.asarray(scan.get("delta_nll", []), dtype=float)
@@ -768,11 +849,39 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0):
     x = x[order]
     y = y[order]
 
-    # One-sided asymptotic mapping using q_mu = 2*DeltaNLL.
+    # One-sided asymptotic CLs (Cowan et al. 2011, eqs. 12-13).
+    #
+    # Test statistic: q_mu = max(0, 2*DeltaNLL)
+    #
+    # Full formula using the Asimov sensitivity q_mu_A = (mu/sigma_A)^2:
+    #   p_sb = 1 - Phi(sqrt(q_mu))
+    #   p_b  = 1 - Phi(sqrt(q_mu) - sqrt(q_mu_A))
+    #   CLs  = p_sb / p_b
+    #
+    # When sigma_asimov is unavailable we fall back to the simplified form
+    #   p_b = Phi(sqrt(q_mu))
+    # which assumes sqrt(q_mu_A) = sqrt(q_mu), i.e. the data equals the Asimov.
+    # The full formula gives the correct expected CLs band and a more accurate
+    # observed limit when the data deviates from the background expectation.
     q_mu = np.clip(2.0 * y, 0.0, None)
-    z = np.sqrt(q_mu)
+    sqrt_q_mu = np.sqrt(q_mu)
     norm = NormalDist()
-    cls_obs = np.asarray([1.0 - norm.cdf(float(v)) for v in z], dtype=float)
+    p_sb = np.asarray([1.0 - norm.cdf(float(v)) for v in sqrt_q_mu], dtype=float)
+
+    if sigma_asimov is not None and np.isfinite(float(sigma_asimov)) and float(sigma_asimov) > 0.0:
+        # q_mu_A(mu) = (mu / sigma_A)^2 varies across the scan
+        sqrt_q_mu_A = x / float(sigma_asimov)   # = mu / sigma_A, element-wise
+        p_b = np.asarray(
+            [1.0 - norm.cdf(float(sq) - float(sa))
+             for sq, sa in zip(sqrt_q_mu, sqrt_q_mu_A)],
+            dtype=float,
+        )
+    else:
+        # Simplified fallback: p_b = Phi(sqrt(q_mu))
+        p_b = np.asarray([norm.cdf(float(v)) for v in sqrt_q_mu], dtype=float)
+
+    # Protect against p_b == 0; CLs -> 0 there.
+    cls_obs = np.where(p_b > 0.0, p_sb / p_b, 0.0)
 
     pos = x >= float(poi_min_limit)
     x_pos = x[pos]
@@ -785,6 +894,8 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0):
     summary["cls_alpha"] = float(alpha)
     summary["cls_scan_points"] = int(x.size)
     summary["cls_scan_max"] = float(np.max(x))
+    if sigma_asimov is not None and np.isfinite(float(sigma_asimov)) and float(sigma_asimov) > 0.0:
+        summary["cls_sigma_asimov"] = float(sigma_asimov)
     summary["cls_curve"] = {
         "pois": [float(v) for v in x.tolist()],
         "observed": [float(v) for v in cls_obs.tolist()],
@@ -796,6 +907,214 @@ def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0):
         summary["yield_upper_limit"] = float(limit)
     else:
         summary["cls_error"] = "no-threshold-crossing"
+
+
+def _q_mu_observed(summary):
+    """Return the observed test statistic q_mu_obs = 2*DeltaNLL at each scan point.
+
+    Returns (x, q_obs) arrays, or (None, None) if the scan is unavailable.
+    """
+    scan = summary.get("delta_nll_scan") or {}
+    x = np.asarray(scan.get("x", []), dtype=float)
+    y = np.asarray(scan.get("delta_nll", []), dtype=float)
+    if x.size == 0 or y.size != x.size:
+        return None, None
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+    if x.size == 0:
+        return None, None
+    order = np.argsort(x)
+    x = x[order]
+    y = y[order]
+    q_obs = np.clip(2.0 * y, 0.0, None)
+    return x, q_obs
+
+
+def _compute_q_mu_for_dataset(workspace, model, inner_model, data, fit_model,
+                               poi_var, mu_test, fit_mode, binned_bins, obs_var):
+    """Fit *data* with POI free and POI fixed at *mu_test*; return q_mu = max(0, 2*DNLL).
+
+    Returns float or NaN on failure.
+    """
+    ROOT = _get_root()
+
+    can_extend = False
+    try:
+        can_extend = bool(model.canBeExtended())
+    except Exception:
+        pass
+
+    fit_opts_free = [ROOT.RooFit.Save(True), ROOT.RooFit.PrintLevel(-1), ROOT.RooFit.Strategy(0)]
+    if can_extend:
+        fit_opts_free.append(ROOT.RooFit.Extended(True))
+
+    old_const = bool(poi_var.isConstant())
+    old_val = float(poi_var.getVal())
+
+    try:
+        # Free fit
+        poi_var.setConstant(False)
+        res_free = model.fitTo(data, *fit_opts_free)
+        if res_free is None or not bool(res_free):
+            return float("nan")
+        nll_free = float(res_free.minNll())
+        mu_hat = float(poi_var.getVal())
+
+        # One-sided: q_mu = 0 when mu_hat > mu_test
+        if mu_hat > float(mu_test):
+            return 0.0
+
+        # Fixed-POI fit
+        poi_var.setVal(float(mu_test))
+        poi_var.setConstant(True)
+        fit_opts_fix = [ROOT.RooFit.Save(True), ROOT.RooFit.PrintLevel(-1), ROOT.RooFit.Strategy(0)]
+        if can_extend:
+            fit_opts_fix.append(ROOT.RooFit.Extended(True))
+        res_fix = model.fitTo(data, *fit_opts_fix)
+        if res_fix is None or not bool(res_fix):
+            return float("nan")
+        nll_fix = float(res_fix.minNll())
+
+        q = 2.0 * (nll_fix - nll_free)
+        return max(0.0, float(q)) if np.isfinite(q) else float("nan")
+
+    except Exception:
+        return float("nan")
+    finally:
+        poi_var.setVal(old_val)
+        poi_var.setConstant(old_const)
+
+
+def _apply_cls_summary_from_toys(
+    summary, alpha, workspace, model, inner_model, fit_model,
+    n_toys_per_point, obs_data, fit_mode, binned_bins, obs_var,
+    poi_min_limit=0.0, seed=1234,
+):
+    """Compute CLs via explicit toy generation at each scan point.
+
+    For each POI grid point mu_test:
+      1. Compute q_mu_obs on the actual (observed/toy) dataset.
+      2. Generate n_toys_per_point toys under H1 (mu=0, b-only) and under
+         H_test (mu=mu_test, s+b) and fit each to get a distribution of q_mu.
+      3. p_sb = fraction of s+b toys with q >= q_obs
+         p_b  = fraction of b-only toys with q >= q_obs
+         CLs  = p_sb / p_b  (with p_b clamped away from 0)
+
+    The grid is taken from the existing delta_nll_scan so scan range and
+    number of points are consistent with the asymptotic path.
+    """
+    x_scan, q_obs_scan = _q_mu_observed(summary)
+    if x_scan is None:
+        summary["cls_error"] = "missing delta_nll_scan for toy CLs"
+        return
+
+    rng = np.random.default_rng(int(seed))
+    poi_var = _resolve_poi_var(workspace, fit_model)
+    if poi_var is None or not bool(poi_var):
+        summary["cls_error"] = "could not resolve POI for toy CLs"
+        return
+
+    nominal_state = _capture_nominal_parameter_state(workspace, model, obs_data, obs_var=obs_var)
+
+    cls_vals = []
+    p_sb_vals = []
+    p_b_vals = []
+
+    for mu_test, q_obs in zip(x_scan.tolist(), q_obs_scan.tolist()):
+        # --- generate b-only toys (mu=0) ---
+        _restore_parameter_state(workspace, nominal_state)
+        poi_var.setVal(0.0)
+        q_bonly = []
+        for _ in range(int(n_toys_per_point)):
+            try:
+                toy = _generate_dataset(workspace, inner_model, obs_data, obs_var, fit_mode, binned_bins)
+                if toy is None or not bool(toy):
+                    continue
+                _restore_parameter_state(workspace, nominal_state)
+                poi_var.setVal(0.0)
+                q = _compute_q_mu_for_dataset(
+                    workspace, model, inner_model, toy, fit_model,
+                    poi_var, mu_test, fit_mode, binned_bins, obs_var,
+                )
+                _restore_parameter_state(workspace, nominal_state)
+                poi_var.setVal(0.0)
+                if np.isfinite(q):
+                    q_bonly.append(float(q))
+            except Exception:
+                pass
+
+        # --- generate s+b toys (mu=mu_test) ---
+        _restore_parameter_state(workspace, nominal_state)
+        poi_var.setVal(float(mu_test))
+        q_splusb = []
+        for _ in range(int(n_toys_per_point)):
+            try:
+                toy = _generate_dataset(workspace, inner_model, obs_data, obs_var, fit_mode, binned_bins)
+                if toy is None or not bool(toy):
+                    continue
+                _restore_parameter_state(workspace, nominal_state)
+                poi_var.setVal(float(mu_test))
+                q = _compute_q_mu_for_dataset(
+                    workspace, model, inner_model, toy, fit_model,
+                    poi_var, mu_test, fit_mode, binned_bins, obs_var,
+                )
+                _restore_parameter_state(workspace, nominal_state)
+                poi_var.setVal(float(mu_test))
+                if np.isfinite(q):
+                    q_splusb.append(float(q))
+            except Exception:
+                pass
+
+        # --- compute p-values ---
+        n_b = len(q_bonly)
+        n_sb = len(q_splusb)
+        if n_b == 0 or n_sb == 0:
+            cls_vals.append(float("nan"))
+            p_sb_vals.append(float("nan"))
+            p_b_vals.append(float("nan"))
+            continue
+
+        p_sb = float(np.sum(np.asarray(q_splusb) >= float(q_obs))) / n_sb
+        p_b  = float(np.sum(np.asarray(q_bonly)  >= float(q_obs))) / n_b
+        # Clamp p_b away from 0 to avoid division by zero; if no b-only toys
+        # exceeded q_obs, CLs -> 0.
+        cls = (p_sb / p_b) if p_b > 0.0 else 0.0
+
+        cls_vals.append(float(cls))
+        p_sb_vals.append(float(p_sb))
+        p_b_vals.append(float(p_b))
+
+    _restore_parameter_state(workspace, nominal_state)
+
+    x_arr = x_scan
+    cls_arr = np.asarray(cls_vals, dtype=float)
+
+    pos = x_arr >= float(poi_min_limit)
+    x_pos = x_arr[pos]
+    cls_pos = cls_arr[pos]
+    limit = _interp_first_crossing(x_pos.tolist(), cls_pos.tolist(), float(alpha))
+    if limit is None and x_pos.size > 0:
+        if np.isfinite(cls_pos[-1]) and float(cls_pos[-1]) <= float(alpha):
+            limit = float(x_pos[-1])
+
+    summary["cls_alpha"] = float(alpha)
+    summary["cls_scan_points"] = int(x_arr.size)
+    summary["cls_scan_max"] = float(np.max(x_arr))
+    summary["cls_toys_per_point"] = int(n_toys_per_point)
+    summary["cls_curve"] = {
+        "pois": [float(v) for v in x_arr.tolist()],
+        "observed": [float(v) if np.isfinite(v) else None for v in cls_arr.tolist()],
+        "p_sb": [float(v) if np.isfinite(v) else None for v in p_sb_vals],
+        "p_b":  [float(v) if np.isfinite(v) else None for v in p_b_vals],
+        "expected_median": [float("nan")] * int(x_arr.size),
+        "expected_band": [],
+    }
+    if limit is not None and np.isfinite(limit):
+        summary["cls_observed"] = float(limit)
+        summary["yield_upper_limit"] = float(limit)
+    else:
+        summary["cls_error"] = "no-threshold-crossing (toys)"
 
 
 def _apply_feldman_cousins_summary_from_scan(summary, alpha, scan_points, n_toys, poi_min_limit=0.0):
@@ -900,6 +1219,7 @@ def _apply_feldman_cousins_true(summary, alpha, scan_points, n_toys, poi_min_lim
         backend = RooFitAnalysisBackend(
             workspace=workspace,
             model=model,
+            inner_model=model,
             poi=poi,
             poi_name=poi_name,
             fit_model=fit_model,
@@ -1168,6 +1488,86 @@ def _run_single_fit(
     }
 
 
+def _build_asimov_for_counting(workspace, poi_var=None, poi_val=None):
+    """Build an Asimov dataset for a counting experiment.
+
+    For counting models the observables are ``count_obs_<channel>``
+    ``RooRealVar`` variables.  The Asimov dataset sets each channel's observed
+    count to the **continuous expected yield** (``yield_total__<channel>``)
+    evaluated at the requested parameter point — no Poisson smearing is
+    applied.
+
+    Parameters
+    ----------
+    workspace:
+        The RooWorkspace containing the model.
+    poi_var:
+        Optional ``RooRealVar`` for the signal-strength POI.  When provided
+        together with *poi_val*, the POI is temporarily set to *poi_val*
+        before evaluating yields and restored afterwards.  This allows the
+        caller to request a background-only (``poi_val=0``) or signal-plus-
+        background Asimov without modifying the workspace persistently.
+    poi_val:
+        Float value to assign to *poi_var* during yield evaluation.  Ignored
+        when *poi_var* is ``None``.
+
+    Returns a single-entry ``RooDataSet`` with all count observables set to
+    their expected (continuous) values, or ``None`` if no ``count_obs_*``
+    variables exist in the workspace.
+    """
+    ROOT = _get_root()
+    count_vars = []
+    for var in _iter_roo_collection(workspace.allVars()):
+        if str(var.GetName()).startswith("count_obs_"):
+            count_vars.append(var)
+    if not count_vars:
+        return None
+
+    # Temporarily fix POI at the requested value for yield evaluation.
+    saved_poi_val = None
+    saved_poi_const = None
+    if poi_var is not None and poi_val is not None:
+        try:
+            saved_poi_val = float(poi_var.getVal())
+            saved_poi_const = bool(poi_var.isConstant())
+            poi_var.setVal(float(poi_val))
+            poi_var.setConstant(True)
+        except Exception:
+            saved_poi_val = None
+
+    try:
+        count_obs_set = ROOT.RooArgSet()
+        for var in count_vars:
+            count_obs_set.add(var)
+
+        for var in count_vars:
+            name = str(var.GetName())
+            channel = name.split("count_obs_", 1)[1] if "count_obs_" in name else ""
+            mean_obj = workspace.function(f"yield_total__{channel}")
+            if mean_obj is None or not bool(mean_obj):
+                mean_obj = workspace.var(f"yield_total__{channel}")
+            if mean_obj is not None and bool(mean_obj):
+                # Use the continuous expected yield directly — RooPoisson is
+                # constructed with setNoRounding(True) so non-integer n values
+                # are evaluated via the gamma-function generalisation.
+                var.setVal(max(float(mean_obj.getVal()), 0.0))
+            # If the yield function is not found, leave the variable at its
+            # current value (set from the card observation row at build time).
+
+        asimov = ROOT.RooDataSet("asimov_count_data", "asimov_count_data", count_obs_set)
+        asimov.add(count_obs_set)
+        return asimov
+
+    finally:
+        # Restore POI to its state before we changed it.
+        if saved_poi_val is not None and poi_var is not None:
+            try:
+                poi_var.setVal(saved_poi_val)
+                poi_var.setConstant(saved_poi_const)
+            except Exception:
+                pass
+
+
 def _generate_dataset(workspace, model, dataset_hint, obs_var, fit_mode, binned_bins):
     ROOT = _get_root()
     model_name = str(model.ClassName()) if hasattr(model, "ClassName") else ""
@@ -1243,13 +1643,18 @@ def _generate_dataset(workspace, model, dataset_hint, obs_var, fit_mode, binned_
     except Exception:
         pass
 
-    gen_ext = [ROOT.RooFit.Extended(True)] if can_extend else []
+    # RooSimultaneous does not accept Extended(True) or Binning(...) as command
+    # args in either generate() or generateBinned() in ROOT 6.32 — they are
+    # rejected as "unrecognized command: BinningSpec".  Only pass Extended(True)
+    # to simple (non-Simultaneous) PDFs.
+    is_simultaneous = "RooSimultaneous" in model_name
+    gen_ext = [] if is_simultaneous else ([ROOT.RooFit.Extended(True)] if can_extend else [])
 
     if fit_mode == "binned":
         generated = None
         try:
-            if "RooSimultaneous" in model_name:
-                generated = model.generateBinned(obs_set, *gen_ext)
+            if is_simultaneous:
+                generated = model.generateBinned(obs_set)
             elif obs_var is not None:
                 generated = model.generateBinned(
                     obs_set,
@@ -1303,14 +1708,17 @@ def _build_toy_for_simultaneous(workspace, model, fit_mode):
             can_extend = bool(ch_pdf.canBeExtended())
         except Exception:
             pass
-        gen_ext = [ROOT.RooFit.Extended(True)] if can_extend else []
 
         toy_ch = None
         try:
+            # Do not pass Extended(True) to RooExtendPdf or RooSimultaneous channel
+            # PDFs — ROOT 6.32 rejects it with "unrecognized command: BinningSpec"
+            # for both generate() and generateBinned().  Extended generation is
+            # handled automatically when the PDF has an extended term.
             if fit_mode == "binned":
-                toy_ch = ch_pdf.generateBinned(ch_obs_set, *gen_ext)
+                toy_ch = ch_pdf.generateBinned(ch_obs_set)
             else:
-                toy_ch = ch_pdf.generate(ch_obs_set, *gen_ext)
+                toy_ch = ch_pdf.generate(ch_obs_set)
         except Exception:
             toy_ch = None
 
@@ -1635,8 +2043,23 @@ def run_analysis_cli(args):
         cls_points = max(cls_points, 41)
     fc_points = int(args.fc_scan_points) if args.fc_scan_points is not None else 21
     limit_scan_points = max(cls_points if args.cls is not None else 0, fc_points if args.feldman_cousins is not None else 0)
-    limit_scan_full_range = bool(args.cls_smart_scan) or (args.feldman_cousins is not None)
+    limit_scan_full_range = (args.cls is not None) or bool(args.cls_smart_scan) or (args.feldman_cousins is not None)
     limit_poi_min = float(args.limit_poi_min)
+
+    cls_toys = int(getattr(args, "cls_toys", 0) or 0)
+
+    # Compute Asimov sigma once for the full asymptotic CLs formula.
+    # Only needed when cls_toys == 0 (asymptotic path).
+    sigma_asimov = None
+    if args.cls is not None and cls_toys == 0:
+        sigma_asimov = _compute_asimov_sigma(
+            ws, model, inner_model, fit_model, obs_var, mode, int(args.binned_bins)
+        )
+        if sigma_asimov is not None:
+            print(f"Asimov sigma (sensitivity): {sigma_asimov:.6g}")
+        else:
+            print("Warning: could not compute Asimov sigma; using simplified p_b = Phi(sqrt(q_mu))")
+        _restore_parameter_state(ws, nominal_param_state)
 
     if use_observed_data:
         summary = _run_single_fit(
@@ -1654,7 +2077,16 @@ def run_analysis_cli(args):
             inner_model=inner_model,
         )
         if args.cls is not None:
-            _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
+            if cls_toys > 0:
+                _apply_cls_summary_from_toys(
+                    summary, float(args.cls),
+                    ws, model, inner_model, fit_model,
+                    cls_toys, observed_data, mode, int(args.binned_bins), obs_var,
+                    poi_min_limit=limit_poi_min,
+                    seed=int(args.seed) if hasattr(args, "seed") else 1234,
+                )
+            else:
+                _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min, sigma_asimov=sigma_asimov)
         if args.feldman_cousins is not None:
             _apply_feldman_cousins_true(
                 summary,
@@ -1687,48 +2119,61 @@ def run_analysis_cli(args):
     elif use_asimov_data:
         _restore_parameter_state(ws, nominal_param_state)
         ROOT = _get_root()
-        # Use inner_model (unwrapped from constraint wrapper) for observable
-        # resolution and Asimov generation — constraint PDFs have no observables.
-        obs_set = _model_observable_set(ws, inner_model, observed_data, obs_var=obs_var)
-        if obs_set is None:
-            raise ValueError("Could not resolve observables for Asimov generation")
-        inner_model_name = str(inner_model.ClassName()) if hasattr(inner_model, "ClassName") else ""
-        # Ensure the index category is in obs_set for RooSimultaneous
-        if "RooSimultaneous" in inner_model_name:
-            index_cat_fn = getattr(inner_model, "indexCat", None)
-            if callable(index_cat_fn):
+        # Counting experiments: build the Asimov dataset directly from expected
+        # yields rather than via generateBinned, which fails for RooProdPdf of
+        # Poisson channels (no event count / not extended).
+        # Generate at mu=0 (background-only Asimov) so that a free fit of the
+        # Asimov data recovers mu≈0 as expected for sensitivity studies.
+        _asimov_poi = _resolve_poi_var(ws, fit_model)
+        asimov = _build_asimov_for_counting(ws, poi_var=_asimov_poi, poi_val=0.0)
+        is_counting_asimov = asimov is not None and bool(asimov)
+        if not is_counting_asimov:
+            # Shape model path — use generateBinned with ExpectedData.
+            # Use inner_model (unwrapped from constraint wrapper) for observable
+            # resolution and Asimov generation — constraint PDFs have no observables.
+            obs_set = _model_observable_set(ws, inner_model, observed_data, obs_var=obs_var)
+            if obs_set is None:
+                raise ValueError("Could not resolve observables for Asimov generation")
+            inner_model_name = str(inner_model.ClassName()) if hasattr(inner_model, "ClassName") else ""
+            # Ensure the index category is in obs_set for RooSimultaneous
+            if "RooSimultaneous" in inner_model_name:
+                index_cat_fn = getattr(inner_model, "indexCat", None)
+                if callable(index_cat_fn):
+                    try:
+                        cat = index_cat_fn()
+                        if cat is not None and not obs_set.contains(cat):
+                            obs_set = ROOT.RooArgSet(obs_set)
+                            obs_set.add(cat)
+                    except Exception:
+                        pass
+            if "RooSimultaneous" in inner_model_name:
+                asimov = _build_asimov_for_simultaneous(ws, inner_model)
+                if asimov is None or not bool(asimov):
+                    asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+            elif obs_var is not None:
                 try:
-                    cat = index_cat_fn()
-                    if cat is not None and not obs_set.contains(cat):
-                        obs_set = ROOT.RooArgSet(obs_set)
-                        obs_set.add(cat)
+                    n_obs = int(obs_set.getSize())
                 except Exception:
-                    pass
-        if "RooSimultaneous" in inner_model_name:
-            asimov = _build_asimov_for_simultaneous(ws, inner_model)
-            if asimov is None or not bool(asimov):
-                asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
-        elif obs_var is not None:
-            try:
-                n_obs = int(obs_set.getSize())
-            except Exception:
-                n_obs = 0
-            if n_obs > 1:
-                asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+                    n_obs = 0
+                if n_obs > 1:
+                    asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+                else:
+                    asimov = inner_model.generateBinned(
+                        obs_set,
+                        ROOT.RooFit.Binning(int(args.binned_bins), float(obs_var.getMin()), float(obs_var.getMax())),
+                        ROOT.RooFit.ExpectedData(True),
+                    )
             else:
-                asimov = inner_model.generateBinned(
-                    obs_set,
-                    ROOT.RooFit.Binning(int(args.binned_bins), float(obs_var.getMin()), float(obs_var.getMax())),
-                    ROOT.RooFit.ExpectedData(True),
-                )
-        else:
-            asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+                asimov = inner_model.generateBinned(obs_set, ROOT.RooFit.ExpectedData(True))
+        # Counting Asimov is an unbinned single-entry RooDataSet; use unbinned
+        # fit mode so _run_single_fit does not try to histogram integer counts.
+        asimov_fit_mode = "unbinned" if is_counting_asimov else "binned"
         summary = _run_single_fit(
             ws,
             model,
             asimov,
             fit_model,
-            "binned",
+            asimov_fit_mode,
             int(args.binned_bins),
             input_obs_var=obs_var,
             collect_plot_details=(n_plot > 0),
@@ -1738,7 +2183,16 @@ def run_analysis_cli(args):
             inner_model=inner_model,
         )
         if args.cls is not None:
-            _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
+            if cls_toys > 0:
+                _apply_cls_summary_from_toys(
+                    summary, float(args.cls),
+                    ws, model, inner_model, fit_model,
+                    cls_toys, asimov, "binned", int(args.binned_bins), obs_var,
+                    poi_min_limit=limit_poi_min,
+                    seed=int(args.seed) if hasattr(args, "seed") else 1234,
+                )
+            else:
+                _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min, sigma_asimov=sigma_asimov)
         if args.feldman_cousins is not None:
             _apply_feldman_cousins_true(
                 summary,
@@ -1756,6 +2210,16 @@ def run_analysis_cli(args):
         summary["dataset_id"] = 0
         summary["asimov_fit"] = True
         summaries.append(summary)
+        status = summary.get("fit_status", -1)
+        poi_name = summary.get("poi_name")
+        poi_fit = summary.get("poi_fit")
+        poi_unc = summary.get("poi_unc_hesse")
+        if poi_name is None or poi_fit is None:
+            print(f"Asimov fit: status={status}, no POI result")
+        elif poi_unc is None:
+            print(f"Asimov fit: status={status}, {poi_name}={float(poi_fit):<10.6g} +- n/a")
+        else:
+            print(f"Asimov fit: status={status}, {poi_name}={float(poi_fit):<10.6g} +- {float(poi_unc):<10.6g}")
     else:
         for idx in range(int(n_toys)):
             _restore_parameter_state(ws, nominal_param_state)
@@ -1777,7 +2241,16 @@ def run_analysis_cli(args):
                 inner_model=inner_model,
             )
             if args.cls is not None:
-                _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min)
+                if cls_toys > 0:
+                    _apply_cls_summary_from_toys(
+                        summary, float(args.cls),
+                        ws, model, inner_model, fit_model,
+                        cls_toys, toy_data, mode, int(args.binned_bins), obs_var,
+                        poi_min_limit=limit_poi_min,
+                        seed=int(args.seed) + idx if hasattr(args, "seed") else 1234 + idx,
+                    )
+                else:
+                    _apply_cls_summary_from_scan(summary, float(args.cls), poi_min_limit=limit_poi_min, sigma_asimov=sigma_asimov)
             if args.feldman_cousins is not None:
                 _apply_feldman_cousins_true(
                     summary,

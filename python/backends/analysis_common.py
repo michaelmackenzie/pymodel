@@ -924,8 +924,8 @@ def compute_likelihood_interval(
     if poi.size == 0:
         return None
 
-    # Compute critical value from chi-square distribution
-    # For one-sided test: q_crit = z_crit^2
+    # Compute critical value for the two-sided likelihood-ratio interval
+    # (used by FC): q_crit = z_crit^2 where z_crit = inv_cdf(1 - alpha/2).
     z_crit = NormalDist().inv_cdf(1.0 - 0.5 * alpha)
     q_crit = float(z_crit * z_crit)
 

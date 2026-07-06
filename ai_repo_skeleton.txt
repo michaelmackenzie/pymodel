@@ -1,0 +1,2151 @@
+
+### FILE: __init__.py
+========================================
+from pathlib import Path
+import sys
+
+### FILE: examples/zmodel/simple_shapes.py
+========================================
+import pickle
+import dill
+import numpy as np
+import zfit
+def _sample_component(pdf, yield_mean, rng):
+    ... # [Logic Trimming]
+def make_toy_data_obs(rng_seed=RNG_SEED):
+    ... # [Logic Trimming]
+def make_shape_payload():
+    ... # [Logic Trimming]
+def write_shape_payload(output_file='simple_shapes.pkl'):
+    ... # [Logic Trimming]
+
+### FILE: examples/zmodel/simple_shapes_binned.py
+========================================
+import dill
+import numpy as np
+from scipy import special
+import zfit
+def _gauss_bin_frac(lo, hi, mu, sigma):
+    ... # [Logic Trimming]
+def _exp_bin_frac(lo, hi, lam, total_lo, total_hi):
+    ... # [Logic Trimming]
+def make_shape_payload():
+    ... # [Logic Trimming]
+def write_shape_payload(output_file='simple_shapes_binned.pkl'):
+    ... # [Logic Trimming]
+
+### FILE: examples/zmodel/mixed_observable_shapes.py
+========================================
+import dill
+import numpy as np
+import zfit
+def _make_catA_payload():
+    ... # [Logic Trimming]
+def _make_catB_payload():
+    ... # [Logic Trimming]
+def _sample_component(pdf, yield_mean, rng):
+    ... # [Logic Trimming]
+def _attach_toy_data_obs(payload, rng):
+    ... # [Logic Trimming]
+def write_mixed_observable_payloads(prefix='mixed_observable_shapes', rng_seed=RNG_SEED):
+    ... # [Logic Trimming]
+
+### FILE: examples/zmodel/two_category_shapes.py
+========================================
+import dill
+import numpy as np
+import zfit
+def _make_category_payload(category):
+    ... # [Logic Trimming]
+def _sample_component(pdf, yield_mean, rng):
+    ... # [Logic Trimming]
+def _attach_toy_data_obs(payload, rng):
+    ... # [Logic Trimming]
+def write_two_category_payloads(prefix='simple_shapes', rng_seed=RNG_SEED):
+    ... # [Logic Trimming]
+
+### FILE: examples/hfmodel/simple_shapes.py
+========================================
+import json
+import numpy as np
+
+### FILE: examples/hfmodel/simple_shapes_binned.py
+========================================
+import json
+import numpy as np
+from scipy import special
+def _gauss_bin_frac(lo, hi, mu, sigma):
+    ... # [Logic Trimming]
+def _exp_bin_frac(lo, hi, lam, total_lo, total_hi):
+    ... # [Logic Trimming]
+import pyhf
+
+### FILE: examples/hfmodel/simple_shapes_two_channel.py
+========================================
+import json
+from pathlib import Path
+import numpy as np
+import pyhf
+
+### FILE: examples/roomodel/simple_shapes.py
+========================================
+import sys
+import numpy as np
+def _get_root():
+    ... # [Logic Trimming]
+def build_shapes_workspace():
+    ... # [Logic Trimming]
+def write_shapes_file(output_file='simple_shapes.root'):
+    ... # [Logic Trimming]
+
+### FILE: examples/roomodel/simple_shapes_binned.py
+========================================
+import numpy as np
+from scipy import special
+def _get_root():
+    ... # [Logic Trimming]
+def _gauss_bin_frac(lo, hi, mu, sigma):
+    ... # [Logic Trimming]
+def _exp_bin_frac(lo, hi, lam, total_lo, total_hi):
+    ... # [Logic Trimming]
+def build_shapes_workspace():
+    ... # [Logic Trimming]
+def write_shapes_file(output_file='simple_shapes_binned.root'):
+    ... # [Logic Trimming]
+
+### FILE: examples/roomodel/simple_shapes_two_channel.py
+========================================
+import numpy as np
+def _get_root():
+    ... # [Logic Trimming]
+def _generate_channel_observations(rng, n_sig, n_bkg):
+    ... # [Logic Trimming]
+def build_shapes_workspace():
+    ... # [Logic Trimming]
+def write_shapes_file(output_file='simple_shapes_two_channel.root'):
+    ... # [Logic Trimming]
+
+### FILE: tests/regression_binned_consistency.py
+========================================
+import json
+import subprocess
+import sys
+from pathlib import Path
+import dill
+def _run(command, cwd, label=''):
+    ... # [Logic Trimming]
+def _load_json(path):
+    ... # [Logic Trimming]
+def _load_pickle(path):
+    ... # [Logic Trimming]
+def _poi_fit_from_summary(summaries, backend):
+    """Extract the POI best-fit from the first summary entry."""
+    ... # [Logic Trimming]
+def _run_hfmodel(repo, cli, asimov=False):
+    ... # [Logic Trimming]
+def _run_zmodel(repo, cli, asimov=False):
+    ... # [Logic Trimming]
+def _run_roomodel(repo, cli, asimov=False):
+    ... # [Logic Trimming]
+def main():
+    ... # [Logic Trimming]
+
+### FILE: tests/regression_cli_surface.py
+========================================
+import subprocess
+import sys
+from pathlib import Path
+def _run(command, cwd):
+    ... # [Logic Trimming]
+def _assert_in(text, expected, label):
+    ... # [Logic Trimming]
+def main():
+    ... # [Logic Trimming]
+
+### FILE: tests/regression_examples_smoke.py
+========================================
+import json
+import subprocess
+import sys
+from pathlib import Path
+import dill
+def _run(command, cwd):
+    ... # [Logic Trimming]
+def _load_json(path):
+    ... # [Logic Trimming]
+def _load_pickle(path):
+    ... # [Logic Trimming]
+def _assert_keys(payload, keys, label):
+    ... # [Logic Trimming]
+def _hfmodel_smoke(repo, cli):
+    ... # [Logic Trimming]
+def _zmodel_smoke(repo, cli):
+    ... # [Logic Trimming]
+def _roomodel_smoke(repo, cli):
+    ... # [Logic Trimming]
+def main():
+    ... # [Logic Trimming]
+
+### FILE: python/pymodel_core.py
+========================================
+import argparse
+from typing import Dict
+from backends import get_backends
+from backends.base import BaseBackend
+def _print_startup_header(backend):
+    ... # [Logic Trimming]
+def _add_backend_command_parsers(backend_parser, backend):
+    ... # [Logic Trimming]
+def build_parser(backends: Dict[str, BaseBackend]):
+    ... # [Logic Trimming]
+def _print_load_summary(summary):
+    ... # [Logic Trimming]
+def run(argv=None):
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/functions.py
+========================================
+from backends.model_functions import PowerLaw
+
+### FILE: python/zmodel/analyze_model.py
+========================================
+import dill
+import multiprocessing as mp
+import os
+import time
+import warnings
+import numpy as np
+import tensorflow as tf
+import zfit
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.analysis_console import print_dataset_summary_header, print_limit_summary_lines
+from backends.analysis_common import checkpoint_mismatches, is_signal_strength_poi, load_analysis_model, resolve_data_mode, resolve_dataset_mode
+from backends.print_model_helpers import print_model_info
+from backends.zfit_parameter_utils import find_parameter_by_name
+from backends.analysis_reporting import add_fit_quality, add_poi_distributions, distribution_summary, init_ensemble_report, print_runtime_summary, resolve_output_or_default, save_and_print_ensemble_report, save_and_print_snapshot, maybe_plot_summary_artifacts
+from zmodel.build_model_from_text import build_model_from_card, parse_model_card
+from zmodel.model_io import load_fit_model
+from zmodel.analysis_core import configure_runtime, run_analysis
+from zmodel.analysis_overrides import apply_parameter_overrides
+from zmodel.analyze_plotting import plot_summary_artifacts
+def _load_analysis_model(model_file=None, input_card=None):
+    ... # [Logic Trimming]
+def _print_dataset_summary(summary, is_observed_fit=False):
+    ... # [Logic Trimming]
+def _save_analysis_snapshot(output_path, fit_model, summaries, args):
+    ... # [Logic Trimming]
+def _build_ensemble_evaluation_report(summaries, total_time_s):
+    ... # [Logic Trimming]
+def _split_dataset_ranges(n_datasets, n_jobs):
+    ... # [Logic Trimming]
+def _run_parallel_worker(task):
+    ... # [Logic Trimming]
+def run_analysis_cli(args):
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/convert_rooworkspace_shapes.py
+========================================
+import argparse
+import os
+import re
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+import dill
+import numpy as np
+import zfit
+import zfit.z.numpy as znp
+class ConversionError:
+class WorkspaceConversionResult:
+def _configure_root_logging():
+    ... # [Logic Trimming]
+def _iter_roo_collection(collection):
+    ... # [Logic Trimming]
+def _collect_workspaces(root_file):
+    ... # [Logic Trimming]
+def _call_first(obj, method_names: List[str], context: str):
+    ... # [Logic Trimming]
+def _infer_limits(var):
+    ... # [Logic Trimming]
+def _roo_formula_to_python_expr(formula: str):
+    ... # [Logic Trimming]
+def _make_composed_parameter(name: str, formula: str, dependencies: List[Any]):
+    ... # [Logic Trimming]
+class RooWorkspaceConverter:
+    def __init__(self, workspace, name_prefix: str=''):
+        ... # [Logic Trimming]
+    def _zname(self, root_name: str):
+        ... # [Logic Trimming]
+    def _space_for_observable(self, obs_var):
+        ... # [Logic Trimming]
+    def _convert_real_arg(self, roo_arg):
+        ... # [Logic Trimming]
+    def _space_from_pdf_observables(self, roo_pdf):
+        ... # [Logic Trimming]
+    def _convert_gaussian(self, roo_pdf):
+        ... # [Logic Trimming]
+    def _convert_exponential(self, roo_pdf):
+        ... # [Logic Trimming]
+    def _convert_uniform(self, roo_pdf):
+        ... # [Logic Trimming]
+    def _convert_hist_pdf(self, roo_pdf):
+        ... # [Logic Trimming]
+    def _convert_chebychev(self, roo_pdf):
+        ... # [Logic Trimming]
+    def _convert_crystal_ball(self, roo_pdf):
+        ... # [Logic Trimming]
+    def _convert_add_pdf(self, roo_pdf):
+        ... # [Logic Trimming]
+    def convert_pdf(self, roo_pdf):
+        ... # [Logic Trimming]
+    def convert_variables(self):
+        ... # [Logic Trimming]
+    def convert_datasets(self):
+        ... # [Logic Trimming]
+    def convert_pdfs(self):
+        ... # [Logic Trimming]
+def _build_payload(workspace, default_rate: float, name_prefix: str):
+    ... # [Logic Trimming]
+def _sanitize_name(name: str):
+    ... # [Logic Trimming]
+def _looks_like_root_file(path: str):
+    ... # [Logic Trimming]
+def _as_float(value: Any):
+    ... # [Logic Trimming]
+def _zfit_param_limits(param: Any):
+    ... # [Logic Trimming]
+def convert_zfit_parameter_to_roofit(param: Any, roo_name: Optional[str]=None, cache: Optional[Dict[str, Any]]=None):
+    ... # [Logic Trimming]
+def _get_zfit_obs_and_var(zfit_pdf, obs_cache: Dict[str, Any]):
+    ... # [Logic Trimming]
+def _zfit_param_by_keys(zfit_pdf, keys: List[str]):
+    ... # [Logic Trimming]
+def _make_roo_arg_list(items: List[Any]):
+    ... # [Logic Trimming]
+def _binned_data_to_th1(binned_data, hist_name: str):
+    ... # [Logic Trimming]
+def convert_zfit_pdf_to_roofit(zfit_pdf, cache: Optional[Dict[str, Any]]=None, param_cache: Optional[Dict[str, Any]]=None, obs_cache: Optional[Dict[str, Any]]=None):
+    ... # [Logic Trimming]
+def convert_zfit_data_to_roofit(zfit_data, dataset_name: str='data_obs', obs_cache: Optional[Dict[str, Any]]=None):
+    ... # [Logic Trimming]
+def convert_zfit_payload_to_rooworkspace(payload: Dict[str, Any], workspace_name: str='converted_ws'):
+    ... # [Logic Trimming]
+def _iter_fit_model_datasets(data_obj):
+    ... # [Logic Trimming]
+def _collect_fit_model_payload(fit_model):
+    ... # [Logic Trimming]
+def export_zfit_analysis_to_root(input_file: str, output_root: str, workspace_name: Optional[str]=None):
+    ... # [Logic Trimming]
+def convert_root_file(root_path: str, output_dir: str, output_prefix: str, default_rate: float, include_prefix: bool=False):
+    ... # [Logic Trimming]
+def _build_parser():
+    ... # [Logic Trimming]
+def main():
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/__init__.py
+========================================
+
+
+### FILE: python/zmodel/utilities.py
+========================================
+import numpy as np
+import uproot
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+import zfit
+import zfit.z.numpy as znp
+import hist
+from hepstats.hypotests import UpperLimit
+from hepstats.hypotests.calculators import AsymptoticCalculator
+from hepstats.hypotests.parameters import POI
+from hepstats.hypotests.parameters import POIarray
+class FitModel:
+def load_binned_data_from_root(name, obs_space, file_path, *, histogram_path, target_bin_width, scale=1.0, nexpected=-1, tree_path=None):
+    """Load binned data from a ROOT histogram using explicit, portable inputs.
+
+Parameters
+----------
+name : str
+    Dataset/process name used only for logging and errors.
+obs_space : zfit.Space
+    Observable space defining the target range.
+file_path : str
+    ROOT input file path.
+histogram_path : str
+    Path to histogram within the ROOT file, e.g. "dir/hist".
+target_bin_width : float
+    Desired output bin width in axis units.
+scale : float, optional
+    Global scale factor applied to histogram counts.
+nexpected : int or float, optional
+    If > 0, normalize sampled histogram counts to this expected count.
+tree_path : str, optional
+    ROOT tree path used when `nexpected > 0` to read branch "nseen"."""
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/load_model.py
+========================================
+import os
+import numpy as np
+from backends.analysis_common import is_signal_strength_poi
+from zmodel.model_io import load_fit_model
+def _safe_float(value):
+    ... # [Logic Trimming]
+def _parameter_value_text(param):
+    ... # [Logic Trimming]
+def _dataset_observed_count(data):
+    """Count observed data events.
+
+For unbinned data, returns the number of data points.
+For binned data, returns the sum of bin contents."""
+    ... # [Logic Trimming]
+def _iter_pdf_lines(pdf, indent=0, seen=None):
+    ... # [Logic Trimming]
+def _summarize_pdf_tree(model):
+    ... # [Logic Trimming]
+def load_and_summarize_model(model_file: str, verbose: int=0):
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/analysis_backend.py
+========================================
+from __future__ import annotations
+import numpy as np
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+import zfit
+from backends.analysis_backend import AnalysisBackend
+from backends.analysis_types import FitResult, HypothesisTestResult
+from backends.zfit_parameter_utils import all_params_list as _all_params, capture_fit_model_parameter_values as _capture_fit_model_params, restore_parameter_values as _restore_params, channel_models as _channel_models
+from zmodel.utilities import AsymptoticCalculator, POI
+class ZfitAnalysisState:
+    """Mutable context object bundling all zfit fit-iteration state."""
+class ZfitAnalysisBackend:
+    """AnalysisBackend implementation wrapping zfit and hepstats."""
+    def fit(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def fixed_poi_fit(self, state: ZfitAnalysisState, poi_value: float):
+        ... # [Logic Trimming]
+    def evaluate_nll(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def hypothesis_test(self, state: ZfitAnalysisState, poi_test: float, poi_alt: float=0.0):
+        ... # [Logic Trimming]
+    def get_poi_value(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def set_poi_value(self, state: ZfitAnalysisState, value: float):
+        ... # [Logic Trimming]
+    def poi_name(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def parameter_names(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def parameter_values(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def snapshot_parameters(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def restore_parameters(self, state: ZfitAnalysisState, snapshot: Dict):
+        ... # [Logic Trimming]
+    def generate_toy_data(self, state: ZfitAnalysisState):
+        """Generate a pseudo-dataset using the current model parameters."""
+        ... # [Logic Trimming]
+    def generate_asimov_data(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def get_observed_data(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def get_current_data(self, state: ZfitAnalysisState):
+        ... # [Logic Trimming]
+    def set_data(self, state: ZfitAnalysisState, data: Any):
+        """Replace the current dataset and rebuild the loss function."""
+        ... # [Logic Trimming]
+    def poi_uncertainty_hesse(self, state: ZfitAnalysisState, fit_result: FitResult):
+        ... # [Logic Trimming]
+    def signal_nominal_yield(self):
+        ... # [Logic Trimming]
+    def poi_is_signal_strength(self):
+        ... # [Logic Trimming]
+    def from_state(cls, state: ZfitAnalysisState):
+        """Return an adapter that carries signal_nominal_yield / poi_is_ss from state."""
+        ... # [Logic Trimming]
+class _ZfitAdapterWithState:
+    """Thin subclass that reads metadata from a bound ZfitAnalysisState."""
+    def signal_nominal_yield(self):
+        ... # [Logic Trimming]
+    def poi_is_signal_strength(self):
+        ... # [Logic Trimming]
+def _extract_hesse_error(result, poi_param):
+    ... # [Logic Trimming]
+def _extract_param_hesse_errors(fit_result):
+    ... # [Logic Trimming]
+def _extract_param_values(fit_result):
+    ... # [Logic Trimming]
+def _build_loss(fit_model, resolved_fit_mode, binned_model, data):
+    """Reconstruct the zfit loss for a given dataset.
+
+Delegates to the existing _build_loss in analysis_core to avoid
+duplicating the channel-model / binned-model branching logic during the
+transition period."""
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/analysis_core.py
+========================================
+import time
+import numpy as np
+import zfit
+from scipy.optimize import minimize_scalar
+from backends.zfit_parameter_utils import all_params_list as _all_params, capture_fit_model_parameter_values as _capture_fit_model_parameter_values, capture_parameter_values as _capture_parameter_values, channel_models as _channel_models, find_parameter_by_name, restore_parameter_values as _restore_parameter_values
+from backends.analysis_common import is_signal_strength_poi, resolve_data_mode as _resolve_data_mode, run_analysis_common
+from zmodel.utilities import AsymptoticCalculator, POI
+def is_likely_counting_model(fit_model):
+    ... # [Logic Trimming]
+def configure_runtime(graph_mode, fit_model, toys):
+    ... # [Logic Trimming]
+def _is_binned_dataset(dataset):
+    ... # [Logic Trimming]
+def _has_histogram_input_data(fit_model):
+    ... # [Logic Trimming]
+def _native_binned_space_from_data(dataset):
+    ... # [Logic Trimming]
+def _resolve_fit_mode(fit_mode, fit_model):
+    ... # [Logic Trimming]
+def _build_counting_binned_space(fit_model):
+    ... # [Logic Trimming]
+def _binning_edges_as_float_array(binning):
+    ... # [Logic Trimming]
+def _build_binned_space(fit_model, bins):
+    ... # [Logic Trimming]
+def _build_channel_binned_spaces(fit_model, bins):
+    ... # [Logic Trimming]
+def _build_channel_binned_models(fit_model, channel_binned_spaces):
+    ... # [Logic Trimming]
+def _make_binned_toy_data(model, binned_space):
+    ... # [Logic Trimming]
+def _guess_binned_space_for_model(fit_model, model, channel=None, bins=40):
+    ... # [Logic Trimming]
+def _make_unbinned_toy_data_from_binned_model(fit_model, model, channel=None, bins=40):
+    ... # [Logic Trimming]
+def _expected_counts_by_channel(fit_model):
+    ... # [Logic Trimming]
+def _build_toy_data(fit_model, resolved_fit_mode, binned_space, is_counting):
+    ... # [Logic Trimming]
+def _build_asimov_binned_data(binned_model, binned_space, fit_model):
+    ... # [Logic Trimming]
+def _is_model_extended(model):
+    """Check if a model is extended (has a yield)."""
+    ... # [Logic Trimming]
+def _build_loss(fit_model, resolved_fit_mode, binned_model, data):
+    ... # [Logic Trimming]
+def _resolve_process_key(process_map, process_name):
+    ... # [Logic Trimming]
+def _find_signal_parameter(fit_model):
+    ... # [Logic Trimming]
+def _resolve_poi_parameter(fit_model, poi_name=None, promote_poi=False):
+    ... # [Logic Trimming]
+def _default_scan_max(signal_param, fit_model):
+    ... # [Logic Trimming]
+def _default_cls_scan_points(fit_model, resolved_fit_mode, cls_scan_points):
+    ... # [Logic Trimming]
+def _observed_dataset_to_values(dataset, fallback_space=None):
+    ... # [Logic Trimming]
+def _values_to_unbinned_dataset(values, obs_space):
+    ... # [Logic Trimming]
+def _build_observed_input(fit_model, resolved_fit_mode, binned_space):
+    ... # [Logic Trimming]
+def _build_iteration_input(fit_model, resolved_fit_mode, binned_model, binned_space, is_counting, data_mode):
+    ... # [Logic Trimming]
+def run_analysis(fit_model, toys, use_observed_data=False, use_asimov_data=False, cls_alpha=None, signal_strength=None, scan_max=None, fit_mode='auto', binned_bins=40, cls_scan_points=None, cls_smart_scan=False, profile_scan=False, poi_name=None, promote_poi=False, poi_scan_points=41, poi_scan_max=None, progress_callback=None, feldman_cousins_alpha=None, feldman_cousins_scan_points=21, feldman_cousins_n_toys=100, feldman_cousins_scan_max=None, checkpoint_freq=None, checkpoint_path=None, existing_results=None, resume_from_index=0, compute_nll_scan=False, nll_scan_points=121, ntoy_plots=0):
+    """Run the zfit analysis, delegating backend-agnostic work to the common orchestrator.
+
+The function:
+  1. Resolves fit mode, binned spaces/models, and the POI parameter.
+  2. Constructs a ``ZfitAnalysisState`` and a ``ZfitAnalysisBackend`` adapter.
+  3. Delegates to ``run_analysis_common`` from ``backends/analysis_common.py``
+     for all CLs / FC / NLL-scan / loop logic."""
+    ... # [Logic Trimming]
+def _enrich_summaries_with_dataset_plots(summaries, fit_model, resolved_fit_mode, binned_model, binned_space, is_counting, data_mode, ntoy_plots, resume_index):
+    """Backfill dataset_plot entries for the first *ntoy_plots* summaries.
+
+The common orchestrator does not carry plot metadata; we regenerate it
+here from the stored parameter snapshot for the first ntoy_plots datasets.
+This is a best-effort enrichment that does not re-run the fit."""
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/analyze_plotting.py
+========================================
+import os
+import numpy as np
+import zfit
+from backends.analyze_plotting_common import plot_cls_scan as _plot_cls_scan_common, plot_delta_nll_scan as _plot_delta_nll_scan_common, plot_feldman_cousins as _plot_feldman_cousins_common, plot_hist as _plot_hist_common
+from backends.zfit_parameter_utils import capture_fit_model_parameter_values as _capture_fit_model_parameter_values, capture_parameter_values as _capture_parameter_values, find_parameter_by_name, restore_parameter_values as _restore_parameter_values
+def _find_parameter_by_name(fit_model, parameter_name):
+    ... # [Logic Trimming]
+def _restore_fit_params_by_name(fit_model, fit_params):
+    ... # [Logic Trimming]
+def _binned_component_counts(pdf, yield_value, edges):
+    ... # [Logic Trimming]
+def _binned_model_counts_from_pdf(pdf, yield_value, edges):
+    ... # [Logic Trimming]
+def _unbinned_component_curve(pdf, yield_value, x_plot):
+    ... # [Logic Trimming]
+def _get_category_names(fit_model):
+    ... # [Logic Trimming]
+def _find_total_signal_category(fit_model):
+    ... # [Logic Trimming]
+def _safe_name(value):
+    ... # [Logic Trimming]
+def _summary_dataset_plot(summary):
+    ... # [Logic Trimming]
+def _summary_dataset_id(summary):
+    ... # [Logic Trimming]
+def _plot_feldman_cousins_construction(summary, plot_dir):
+    ... # [Logic Trimming]
+def _plot_categories(summary, fit_model):
+    ... # [Logic Trimming]
+def _term_process_name(fit_model, term_name):
+    ... # [Logic Trimming]
+def _component_counts_by_channel(fit_model, edges, channel):
+    ... # [Logic Trimming]
+def _component_integrals_by_bin(fit_model, bin_edges, channel):
+    """Compute PDF integrals within each bin for histogram-style plotting."""
+    ... # [Logic Trimming]
+def _component_curve_by_channel(fit_model, x_plot, bin_width, channel):
+    ... # [Logic Trimming]
+def _parameter_shifted_value(param, delta):
+    ... # [Logic Trimming]
+def _hessian_model_band(fit_model, fit_param_hesse, nominal_values, evaluate_total):
+    ... # [Logic Trimming]
+def plot_dataset_and_components(summary, fit_model, plot_dir, binned_bins):
+    ... # [Logic Trimming]
+def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):
+    ... # [Logic Trimming]
+def plot_nll_scan(summary, plot_dir):
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/convert_datacard_format.py
+========================================
+import dill
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.datacard_convert_common import build_backend_converter_functions, run_converter_cli
+def _load_workspace_payload_dill(shape_path: str):
+    ... # [Logic Trimming]
+def main():
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/model_io.py
+========================================
+import __main__
+import json
+import os
+from typing import Any, Dict, Optional
+import pickle
+import dill
+import zfit
+from zmodel.utilities import FitModel
+def _inject_hs3_helpers():
+    """Inject helpers into __main__ for zfit HS3 JSON serialization."""
+    ... # [Logic Trimming]
+def save_fit_model_bundle(fit_model: FitModel, output_file: str, card=None, card_dir: Optional[str]=None):
+    ... # [Logic Trimming]
+def _choose_top_model(distributions: Dict[str, Any]):
+    ... # [Logic Trimming]
+def _fit_model_from_hs3_payload(hs3_payload: Dict[str, Any], fit_metadata: Optional[Dict[str, Any]]=None, observed_data: Any=None):
+    ... # [Logic Trimming]
+def load_fit_model(model_file: str):
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/analysis_overrides.py
+========================================
+from backends.analysis_overrides_common import parse_parameter_name_list, parse_parameter_range_map, parse_parameter_value_map
+from backends.zfit_parameter_utils import find_parameter_by_name, find_parameter_with_error
+def _resolve_required_parameters(fit_model, required_names):
+    ... # [Logic Trimming]
+def apply_parameter_overrides(fit_model, set_values_spec, set_ranges_spec, freeze_spec):
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/build_model_from_text.py
+========================================
+import os
+import pickle
+import pathlib
+import sys
+from typing import Dict, List, Optional, Tuple
+import dill
+import numpy as np
+import zfit
+import zfit.z.numpy as znp
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.card_parser import CardSpec, parse_model_card as parse_common_model_card
+from backends.builder_common import kind_token, make_term_mappings, make_term_names, resolve_shape_file_for_term
+from zmodel.model_io import save_fit_model_bundle
+from zmodel.utilities import FitModel
+from zmodel.functions import *
+def parse_model_card(card_path: str):
+    ... # [Logic Trimming]
+def _load_shape_payload_from_file(file_path: str):
+    ... # [Logic Trimming]
+def _resolve_shape_payloads(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def _observed_entries_from_dataset(data_obs):
+    """Get the observed data count (number of events for unbinned, sum of bin contents for binned).
+
+For unbinned data, we count the number of data points.
+For binned data, we sum the bin contents."""
+    ... # [Logic Trimming]
+def _extract_data_obs_payload(raw_payload):
+    ... # [Logic Trimming]
+def _coerce_unbinned_data_obs(obs_space, payload):
+    ... # [Logic Trimming]
+def _data_obs_to_unbinned_values(data_obs, obs_space):
+    ... # [Logic Trimming]
+def _space_signature(space):
+    ... # [Logic Trimming]
+def _get_from_dict_candidates(source_dict, process, candidates):
+    ... # [Logic Trimming]
+def get_nominal_pdf(payload, process: str):
+    ... # [Logic Trimming]
+def get_shape_variation_pdf(payload, process: str, uncertainty_name: str, direction: str):
+    ... # [Logic Trimming]
+def get_nominal_rate(payload, process: str, card_rate: Optional[float]):
+    ... # [Logic Trimming]
+def _to_nonextended_pdf(pdf):
+    ... # [Logic Trimming]
+def make_shape_morphed_pdf(nominal_pdf, up_pdf, down_pdf, theta, name: str):
+    ... # [Logic Trimming]
+def multiply_factors(base: float, factors: List[zfit.Parameter], name: str):
+    ... # [Logic Trimming]
+def _create_extended_pdf(pdf, yield_param, name_suffix: str='_ext'):
+    ... # [Logic Trimming]
+def _build_extended_sum_model(term_names, shapes, yields, model_name: str):
+    ... # [Logic Trimming]
+def build_model_from_card(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def build_and_save_model_from_card_file(input_card: str, output_file: str):
+    ... # [Logic Trimming]
+
+### FILE: python/zmodel/plot_analysis.py
+========================================
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.plot_analysis_common import run_backend_plot_snapshot_cli
+def main():
+    ... # [Logic Trimming]
+
+### FILE: python/backends/builder_common.py
+========================================
+from typing import List
+from backends.card_parser import CardSpec
+def _shape_mapping_rank(process_target: str, channel_target: str, process: str, channel: str):
+    ... # [Logic Trimming]
+def resolve_shape_file_for_term(card: CardSpec, process: str, channel: str):
+    ... # [Logic Trimming]
+def kind_token(kind: str):
+    ... # [Logic Trimming]
+def make_term_names(process_names: List[str], bin_names: List[str]):
+    ... # [Logic Trimming]
+def make_term_mappings(term_names: List[str], process_names: List[str], bin_names: List[str]):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/datacard_convert_common.py
+========================================
+import argparse
+import os
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Tuple
+class ShapeLine:
+class ParsedCard:
+def tokenize_card_line(line: str):
+    ... # [Logic Trimming]
+def read_tokens(card_path: str):
+    ... # [Logic Trimming]
+def format_row(key: str, values: List[str]):
+    ... # [Logic Trimming]
+def parse_observation(fields: List[str]):
+    ... # [Logic Trimming]
+def parse_card(card_path: str):
+    ... # [Logic Trimming]
+def detect_card_flavor(card_path: str, backend_shape_ext: str, backend_name: str):
+    ... # [Logic Trimming]
+def default_shapes_file_from_combine(parsed: ParsedCard, backend_shape_ext: str):
+    ... # [Logic Trimming]
+def clean_workspace_expr(expr: str):
+    ... # [Logic Trimming]
+def render_process_expr(expr: str, process: str, channel: str):
+    ... # [Logic Trimming]
+def workspace_from_expr(expr: str):
+    ... # [Logic Trimming]
+def load_workspace_name_mapping(shapes_file: str, card_dir: str, payload_loader):
+    ... # [Logic Trimming]
+def choose_shape_line(parsed: ParsedCard, process: str, channel: str):
+    ... # [Logic Trimming]
+def map_process_names_from_shapes(parsed: ParsedCard, workspace_name_mapping: Optional[Dict[str, str]]=None):
+    ... # [Logic Trimming]
+def first_channel(bin_names: List[str]):
+    ... # [Logic Trimming]
+def channel_list(bin_names: List[str]):
+    ... # [Logic Trimming]
+def observation_values(parsed: ParsedCard, channels: List[str]):
+    ... # [Logic Trimming]
+def convert_combine_to_backend(parsed: ParsedCard, shapes_file: Optional[str], backend_name: str, backend_shape_ext: str, map_process_names: bool=True, workspace_name_mapping: Optional[Dict[str, str]]=None):
+    ... # [Logic Trimming]
+def convert_backend_to_combine(parsed: ParsedCard, backend_name: str, root_file: str, workspace_name: str, pdf_template: str, syst_template: str):
+    ... # [Logic Trimming]
+def default_root_file_from_backend(parsed: ParsedCard, backend_shape_ext: str):
+    ... # [Logic Trimming]
+def build_converter_parser(backend_name: str, backend_shape_ext: str):
+    ... # [Logic Trimming]
+def run_converter_cli(backend_name: str, backend_shape_ext: str, payload_loader: Callable[[str], object]):
+    ... # [Logic Trimming]
+def build_backend_converter_functions(backend_name: str, backend_shape_ext: str):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/common.py
+========================================
+import importlib
+def package_version(module_name, fallback='unknown'):
+    ... # [Logic Trimming]
+def add_feldman_cousins_arguments(parser):
+    ... # [Logic Trimming]
+def add_source_arguments(parser, model_file_help):
+    ... # [Logic Trimming]
+def add_shared_analysis_arguments(parser, *, output_flag, output_default, output_help, poi_scan_max_help):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/model_functions.py
+========================================
+import zfit
+import zfit.z.numpy as znp
+class PowerLaw:
+    """Custom 1D Power-Law PDF: f(x) = x^(gamma)."""
+    def _pdf(self, x, norm, params):
+        ... # [Logic Trimming]
+
+### FILE: python/backends/__init__.py
+========================================
+from typing import Dict
+from backends.hfmodel.implementation import create_backend as create_hf_backend
+from backends.roomodel.implementation import create_backend as create_roo_backend
+from backends.zmodel.implementation import create_backend as create_z_backend
+from backends.base import BaseBackend
+def get_backends():
+    """Return supported backends keyed by CLI name."""
+    ... # [Logic Trimming]
+
+### FILE: python/backends/print_model_helpers.py
+========================================
+import sys
+def print_model_info(fit_model, summary, backend_name, state=None):
+    """Print model information after POI likelihood fit.
+
+Parameters
+----------
+fit_model : object
+    The fit model object (backend-specific).
+summary : dict
+    The summary dictionary containing fit results.
+backend_name : str
+    The name of the backend ('zmodel', 'hfmodel', 'roomodel').
+state : object, optional
+    Backend-specific state object (used for some backends)."""
+    ... # [Logic Trimming]
+def _print_zmodel_info(fit_model, summary):
+    """Print zfit model PDFs and floating parameters."""
+    ... # [Logic Trimming]
+def _print_hfmodel_info(fit_model, summary):
+    """Print pyhf model PDFs and floating parameters."""
+    ... # [Logic Trimming]
+def _print_roomodel_info(fit_model, summary, state=None):
+    """Print RooFit model PDFs and floating parameters."""
+    ... # [Logic Trimming]
+
+### FILE: python/backends/analysis_types.py
+========================================
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+class FitResult:
+    """Outcome of a single unconstrained or fixed-POI MLE fit."""
+class HypothesisTestResult:
+    """CLs values returned by a single call to a hypothesis test at one POI."""
+class CLsResult:
+    """Outcome of a full CLs scan over a grid of POI values."""
+class FCResult:
+    """Outcome of a Feldman-Cousins confidence-interval construction."""
+class NLLScanResult:
+    """delta-NLL profile scan of the POI for plotting."""
+
+### FILE: python/backends/analyze_plotting_common.py
+========================================
+import numpy as np
+def _plt():
+    ... # [Logic Trimming]
+def _finite_pair(x_values, y_values):
+    ... # [Logic Trimming]
+def plot_hist(values, title, xlabel, output_file, bins=30, add_grid=True):
+    ... # [Logic Trimming]
+def plot_delta_nll_scan(x_values, y_values, *, poi_name, output_file, title, y_label, reference_lines, line_color='#2E6F95', line_label='$\\Delta$NLL', vertical_lines=()):
+    ... # [Logic Trimming]
+def plot_cls_scan(pois, observed, *, output_file, poi_name, alpha, title, expected_median=None, expected_band=None):
+    ... # [Logic Trimming]
+def plot_feldman_cousins(poi, q_obs, q_crit, p_obs, *, output_file, poi_name, interval=None, alpha=None, title_base='Feldman-Cousins Construction', y_label='$q_\\mu$'):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/path_bootstrap.py
+========================================
+import pathlib
+import sys
+def ensure_repo_root_on_path(caller_file):
+    """Ensure the repository's python/ directory is importable.
+
+If PYTHONPATH already includes the repo root, this is effectively a no-op."""
+    ... # [Logic Trimming]
+
+### FILE: python/backends/analysis_common.py
+========================================
+from __future__ import annotations
+import json
+import os
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple
+import numpy as np
+from backends.analysis_types import CLsResult, FCResult, FitResult, NLLScanResult
+def is_signal_strength_poi(name: str):
+    """Return True when *name* identifies a signal-strength parameter.
+
+A signal-strength POI is either the bare name ``"mu"`` (the default for
+models with a single signal process) or any name that starts with the
+``"mu_"`` prefix (multi-process models or legacy names)."""
+    ... # [Logic Trimming]
+def load_analysis_model(model_file, input_card, load_fit_model_fn, parse_model_card_fn, build_model_from_card_fn):
+    ... # [Logic Trimming]
+def resolve_data_mode(use_observed_data, use_asimov_data):
+    ... # [Logic Trimming]
+def resolve_dataset_mode(toys, has_observed_data, *, error_suffix=''):
+    ... # [Logic Trimming]
+def checkpoint_mismatches(checkpoint, expected):
+    ... # [Logic Trimming]
+def normalize_output_path(output_path, extension):
+    ... # [Logic Trimming]
+def interpolate_cls_crossing(poi_values: np.ndarray, cls_values: np.ndarray, alpha: float):
+    """Linear interpolation of the POI where CLs crosses *alpha* (from above).
+
+Parameters
+----------
+poi_values:
+    Monotonically increasing array of POI scan points.
+cls_values:
+    CLs values at each scan point (may contain NaNs).
+alpha:
+    The CLs threshold (e.g. 0.05 for 95 % CL).
+
+Returns
+-------
+float or None
+    Interpolated crossing point, or None if no crossing was found in the
+    finite region of the curve."""
+    ... # [Logic Trimming]
+def default_cls_scan_max(poi_name: str, poi_bounds: Optional[Tuple[float, float]], signal_nominal_yield: Optional[float]=None, poi_is_signal_strength: bool=True):
+    """Return a sensible upper bound for a CLs scan over *poi_name*.
+
+For signal-strength parameters (mu_*) the default is 5.0 unless a finite
+upper bound is available from the model.  For absolute-yield parameters
+the default is 3× the nominal yield (≥ 50)."""
+    ... # [Logic Trimming]
+def default_poi_scan_lower(poi_name: str, poi_value: float, poi_bounds: Optional[Tuple[float, float]], poi_is_signal_strength: bool=True):
+    ... # [Logic Trimming]
+def default_poi_scan_upper(poi_name: str, poi_value: float, poi_bounds: Optional[Tuple[float, float]], poi_is_signal_strength: bool=True, signal_nominal_yield: Optional[float]=None, requested_max: Optional[float]=None):
+    ... # [Logic Trimming]
+def compute_cls_scan(backend, state: Any, alpha: float, scan_max: float, scan_points: int):
+    """Scan the POI from 0 to *scan_max* and compute CLs at each point.
+
+Parameters
+----------
+backend : AnalysisBackend
+    The backend adapter implementing ``hypothesis_test``.
+state :
+    Backend-opaque state object.
+alpha :
+    CLs threshold (e.g. 0.05).
+scan_max :
+    Upper end of the POI scan range (lower end is always 0).
+scan_points :
+    Number of evenly-spaced grid points.
+
+Returns
+-------
+CLsResult"""
+    ... # [Logic Trimming]
+def _build_expected_quantiles(expected_limits: Dict[int, Optional[float]]):
+    """Convert {sigma: limit} to the standard quantile dict format."""
+    ... # [Logic Trimming]
+def compute_cls_scan_smart(backend, state: Any, alpha: float, scan_max: float, scan_points: int, max_expansions: int=6):
+    """Adaptive CLs scan that expands the range until the limit is well inside it.
+
+Expands *scan_max* by doubling up to *max_expansions* times when:
+- the observed limit falls outside 80 % of the current range, or
+- the expected +2σ band limit is not available.
+
+After convergence a refinement pass over a tighter range around the
+observed limit is performed for better accuracy.
+
+Returns
+-------
+(result, used_scan_max, used_scan_points)"""
+    ... # [Logic Trimming]
+def extract_expected_cls_quantiles(cls_result: Any):
+    """Normalise a CLs result into a standard quantile dict.
+
+Accepts a ``CLsResult`` dataclass, a plain dict (legacy format from either
+backend), or None.
+
+Returns ``{"2.5%": …, "16%": …, "50%": …, "84%": …, "97.5%": …}`` or
+None if not enough information is available."""
+    ... # [Logic Trimming]
+def compute_poi_pull(poi_fit: Optional[float], poi_true: Optional[float], poi_unc: Optional[float]):
+    """(poi_fit - poi_true) / poi_unc, or None when any input is missing/zero."""
+    ... # [Logic Trimming]
+def compute_nll_profile_scan(backend, state: Any, poi_best: float, poi_unc: Optional[float], poi_bounds: Optional[Tuple[float, float]], poi_is_signal_strength: bool=True, signal_nominal_yield: Optional[float]=None, scan_max: Optional[float]=None, n_points: int=121):
+    """Profile-likelihood scan of the POI for plotting.
+
+Scans from ``best - 5*sigma`` to ``best + 5*sigma`` when *poi_unc* is
+available; otherwise falls back to the model bounds.  Scanning proceeds
+outward from the best-fit point using warm starts to minimise artifacts.
+
+Returns
+-------
+NLLScanResult or None"""
+    ... # [Logic Trimming]
+def estimate_poi_unc_from_profile(backend, state: Any, poi_best: float, poi_bounds: Optional[Tuple[float, float]], poi_is_signal_strength: bool=True, signal_nominal_yield: Optional[float]=None, n_points: int=41):
+    """Estimate POI sigma from the delta-NLL = 0.5 profile crossing.
+
+Returns None when the crossing cannot be located."""
+    ... # [Logic Trimming]
+def compute_feldman_cousins(backend, state: Any, alpha: float, scan_points: int, n_toys: int, scan_max: float, dataset_id: int=0, seed: int=1234):
+    """Feldman-Cousins confidence interval via the Neyman construction.
+
+For each point on a POI grid the method:
+  1. Generates *n_toys* toy datasets at that true POI value.
+  2. Fits each toy to obtain the profile test statistic q_mu.
+  3. Determines the critical value q_crit at level *alpha*.
+  4. Checks whether q_obs (computed on the real data) satisfies q_obs <= q_crit.
+
+The FC interval is the union of all accepted grid points.
+
+Parameters
+----------
+backend : AnalysisBackend
+state :
+    Backend state.  Must already have the observed data loaded.
+alpha :
+    Significance level (e.g. 0.05 for 95 % CL).
+scan_points :
+    Number of grid points in [0, scan_max].
+n_toys :
+    Number of toy datasets generated per grid point.
+scan_max :
+    Upper bound of the POI grid.
+dataset_id, seed :
+    Reproducibility seeds."""
+    ... # [Logic Trimming]
+def _compute_q_mu(backend, state: Any, mu_test: float):
+    """Profile test statistic q_mu = max(0, NLL(mu_test) - NLL(mu_hat)).
+
+This is the common implementation used by the FC algorithm."""
+    ... # [Logic Trimming]
+def compute_likelihood_interval(poi_values: np.ndarray, delta_nll_values: np.ndarray, alpha: float, poi_min_limit: float=0.0):
+    """Compute a confidence interval using the likelihood-ratio method (asymptotic).
+
+This method applies the profile-likelihood asymptotic approximation where the
+critical value q_crit is derived from the chi-square distribution as:
+
+    q_crit = (z_critical)^2
+
+where z_critical is the standard normal quantile at the desired confidence level.
+
+The observed test statistic at each POI value is:
+
+    q_obs = 2 * delta_nll
+
+An interval point is accepted if q_obs <= q_crit. The confidence interval is
+the union of all accepted points.
+
+Parameters
+----------
+poi_values : np.ndarray
+    Array of POI grid points (must be sorted ascending).
+delta_nll_values : np.ndarray
+    Array of delta-NLL values (NLL relative to best fit).
+alpha : float
+    Significance level (e.g., 0.05 for 95% CL).
+poi_min_limit : float
+    Minimum POI value to consider in the interval.
+
+Returns
+-------
+(lower, upper) : tuple of float or None
+    The confidence interval endpoints, or None if no points are accepted.
+
+Notes
+-----
+This is an asymptotic approximation and not the true Feldman-Cousins Neyman
+construction (which generates toys and derives per-point critical values).
+For better coverage properties, use compute_feldman_cousins() instead."""
+    ... # [Logic Trimming]
+def _write_checkpoint_json(path: Optional[str], summaries: list, config: dict):
+    ... # [Logic Trimming]
+def run_analysis_common(backend, state: Any, toys: int, data_mode: str, *, cls_alpha: Optional[float]=None, signal_strength: Optional[float]=None, cls_scan_points: Optional[int]=None, cls_smart_scan: bool=False, poi_scan_max: Optional[float]=None, poi_bounds: Optional[Tuple[float, float]]=None, feldman_cousins_alpha: Optional[float]=None, feldman_cousins_scan_points: int=21, feldman_cousins_n_toys: int=100, feldman_cousins_scan_max: Optional[float]=None, compute_nll_scan: bool=False, nll_scan_points: int=121, progress_callback: Optional[Callable]=None, checkpoint_freq: Optional[int]=None, checkpoint_path: Optional[str]=None, existing_results: Optional[list]=None, resume_from_index: int=0, seed: int=1234):
+    """Backend-agnostic analysis loop.
+
+Parameters
+----------
+backend : AnalysisBackend
+    The backend adapter that provides all low-level statistical operations.
+state :
+    Backend-opaque context object (model + data + minimiser + …).
+toys :
+    Total number of datasets (toys, observed, or Asimov iterations).
+data_mode :
+    ``"toy"``, ``"observed"``, or ``"asimov"``.
+cls_alpha :
+    CLs significance level; pass None to skip CLs.
+signal_strength :
+    Truth-level signal strength used when generating toy data.
+cls_scan_points :
+    Number of POI scan points for CLs (default chosen by the common logic).
+cls_smart_scan :
+    If True use adaptive range expansion for the CLs scan.
+poi_scan_max :
+    Explicit upper bound for CLs / NLL scans.  If None the backend
+    heuristic is used.
+poi_bounds :
+    (lower, upper) bounds of the POI parameter; used for scan ranges.
+feldman_cousins_alpha :
+    Significance level for Feldman-Cousins; pass None to skip.
+feldman_cousins_scan_points, feldman_cousins_n_toys, feldman_cousins_scan_max :
+    FC construction parameters.
+compute_nll_scan :
+    If True compute the delta-NLL profile scan for the *first* toy/dataset.
+nll_scan_points :
+    Number of points in the NLL scan.
+progress_callback :
+    Optional ``callback(summary, is_observed_fit=bool)`` called after each
+    dataset.
+checkpoint_freq / checkpoint_path :
+    Save a JSON checkpoint every *checkpoint_freq* completed datasets.
+existing_results / resume_from_index :
+    Append to *existing_results* and start iteration at *resume_from_index*.
+seed :
+    Base RNG seed.
+
+Returns
+-------
+list[dict]
+    One summary dict per dataset in iteration order."""
+    ... # [Logic Trimming]
+def _apply_cls_to_summary(summary: Dict[str, Any], backend, state: Any, cls_alpha: float, poi_scan_max: Optional[float], poi_bounds: Optional[Tuple[float, float]], n_cls_points: int, cls_smart_scan: bool, poi_is_signal_strength: bool, signal_nominal_yield: Optional[float]):
+    """Run the CLs scan and write results into *summary* in-place."""
+    ... # [Logic Trimming]
+
+### FILE: python/backends/analysis_backend.py
+========================================
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, Tuple
+from backends.analysis_types import CLsResult, FCResult, FitResult, HypothesisTestResult, NLLScanResult
+class AnalysisBackend:
+    """Backend-specific statistical primitives consumed by the common algorithms."""
+    def fit(self, state: Any):
+        """Run an unconstrained MLE fit and return the result.
+
+The backend must update *state* so that subsequent calls to
+``get_poi_value`` / ``parameter_values`` reflect the best-fit point."""
+        ... # [Logic Trimming]
+    def fixed_poi_fit(self, state: Any, poi_value: float):
+        """Run an MLE fit with the POI fixed at *poi_value*.
+
+All nuisance parameters are left free to float.  The backend must
+restore the POI to its previous floating / fixed status after the call."""
+        ... # [Logic Trimming]
+    def evaluate_nll(self, state: Any):
+        """Return the NLL evaluated at the current parameter values."""
+        ... # [Logic Trimming]
+    def hypothesis_test(self, state: Any, poi_test: float, poi_alt: float=0.0):
+        """Compute observed CLs and expected CLs bands at a single POI value.
+
+Parameters
+----------
+poi_test:
+    The null-hypothesis POI value (the value being tested).
+poi_alt:
+    The alternative-hypothesis POI value (typically 0 for upper limits).
+
+Returns
+-------
+HypothesisTestResult
+    ``observed_cls`` is the ratio p_null / p_alt.
+    ``expected_cls`` maps sigma integers {-2,-1,0,+1,+2} to the
+    corresponding expected CLs values under the background-only
+    hypothesis."""
+        ... # [Logic Trimming]
+    def get_poi_value(self, state: Any):
+        """Return the current value of the parameter of interest."""
+        ... # [Logic Trimming]
+    def set_poi_value(self, state: Any, value: float):
+        """Set the parameter of interest to *value* (does not run a fit)."""
+        ... # [Logic Trimming]
+    def poi_name(self, state: Any):
+        """Return the name of the parameter of interest."""
+        ... # [Logic Trimming]
+    def parameter_names(self, state: Any):
+        """Return the names of all floating parameters."""
+        ... # [Logic Trimming]
+    def parameter_values(self, state: Any):
+        """Return a {name: value} dict for all floating parameters."""
+        ... # [Logic Trimming]
+    def snapshot_parameters(self, state: Any):
+        """Capture a snapshot of the current parameter state.
+
+Returns an opaque object that can be passed to
+``restore_parameters`` to reset the state."""
+        ... # [Logic Trimming]
+    def restore_parameters(self, state: Any, snapshot: Any):
+        """Restore parameter state from a previously captured snapshot."""
+        ... # [Logic Trimming]
+    def generate_toy_data(self, state: Any):
+        """Draw a pseudo-dataset from the model at its current parameter values.
+
+Returns an opaque data object suitable for ``set_data``."""
+        ... # [Logic Trimming]
+    def generate_asimov_data(self, state: Any):
+        """Return an Asimov (expected) dataset at current parameter values."""
+        ... # [Logic Trimming]
+    def get_observed_data(self, state: Any):
+        """Return the observed (real) dataset from the fit model."""
+        ... # [Logic Trimming]
+    def get_current_data(self, state: Any):
+        """Return the dataset currently loaded into *state*.
+
+This is the data that will be used by the next call to ``fit`` or
+``evaluate_nll``.  For backends where the data is embedded in the loss
+function (e.g. zfit), this returns the dataset that was last passed to
+``set_data``."""
+        ... # [Logic Trimming]
+    def set_data(self, state: Any, data: Any):
+        """Replace the current dataset in *state* with *data*.
+
+The backend must update the loss / likelihood internally so that
+subsequent fit / evaluate_nll calls use the new dataset."""
+        ... # [Logic Trimming]
+    def poi_uncertainty_hesse(self, state: Any, fit_result: FitResult):
+        """Return a Hessian-based POI uncertainty from a completed fit result.
+
+Returns None when the Hessian is unavailable or numerically unreliable."""
+        ... # [Logic Trimming]
+    def signal_nominal_yield(self):
+        """Nominal signal yield for converting mu limits to yield limits, or None."""
+        ... # [Logic Trimming]
+    def poi_is_signal_strength(self):
+        """True when the POI is a signal-strength modifier (mu), False otherwise."""
+        ... # [Logic Trimming]
+
+### FILE: python/backends/base.py
+========================================
+from abc import ABC, abstractmethod
+class BaseBackend:
+    """Common interface for pymodel backends."""
+    def runtime_versions(self):
+        """Return list of (name, version) tuples for startup header."""
+        ... # [Logic Trimming]
+    def build_defaults(self):
+        """Return build command defaults and help metadata."""
+        ... # [Logic Trimming]
+    def add_build_arguments(self, parser):
+        ... # [Logic Trimming]
+    def add_load_arguments(self, parser):
+        ... # [Logic Trimming]
+    def add_analyze_arguments(self, parser):
+        """Add backend-specific and shared analyze options."""
+        ... # [Logic Trimming]
+    def build_model(self, input_card, output_file):
+        """Build model bundle from input card and save to output path."""
+        ... # [Logic Trimming]
+    def load_summary(self, model_file, verbose=0):
+        """Load a saved model and return summary dict."""
+        ... # [Logic Trimming]
+    def run_analysis(self, args):
+        """Run backend analysis entrypoint for parsed analyze args."""
+        ... # [Logic Trimming]
+
+### FILE: python/backends/analysis_overrides_common.py
+========================================
+from typing import List
+def parse_parameter_value_map(spec):
+    ... # [Logic Trimming]
+def parse_parameter_range_map(spec):
+    """Parse a comma-separated parameter range spec into a dict of {name: (low, high)}.
+
+Each entry must have the form ``name=low:high``.  Either ``low`` or ``high``
+may be omitted (e.g. ``name=0:`` or ``name=:100``) to leave that bound
+unchanged; the corresponding tuple element will be ``None``."""
+    ... # [Logic Trimming]
+def parse_parameter_name_list(spec):
+    ... # [Logic Trimming]
+def validate_override_names(available_names: List[str], requested_names: List[str]):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/zfit_parameter_utils.py
+========================================
+from typing import Dict, Iterable, List, Optional, Tuple
+def channel_models(fit_model):
+    ... # [Logic Trimming]
+def all_models(fit_model):
+    ... # [Logic Trimming]
+def _iter_child_params(param):
+    ... # [Logic Trimming]
+def iter_unique_params(fit_model):
+    ... # [Logic Trimming]
+def all_params_list(fit_model):
+    ... # [Logic Trimming]
+def find_parameter_with_error(fit_model, parameter_name: str):
+    ... # [Logic Trimming]
+def find_parameter_by_name(fit_model, parameter_name: str):
+    ... # [Logic Trimming]
+def capture_fit_model_parameter_values(fit_model):
+    ... # [Logic Trimming]
+def capture_parameter_values(model):
+    ... # [Logic Trimming]
+def restore_parameter_values(saved_values: Dict):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/analysis_console.py
+========================================
+def _summary_has_flag(summary, key, include_dataset_plot_flags):
+    ... # [Logic Trimming]
+def print_dataset_summary_header(summary, is_observed_fit=False, *, fit_precision='.4g', unc_precision='.4g', unconstrained_text=None, asimov_label='Asimov', observed_label='Observed', include_dataset_plot_flags=False):
+    ... # [Logic Trimming]
+def print_limit_summary_lines(summary, *, include_scan_details=False, include_expected_error=False, include_yield_upper=False, feldman_status_prefix='Feldman-Cousins status', expected_label='CLs expected (asymptotic, b-only fit)', expected_precision='.4f', feldman_interval_precision=None):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/card_parser.py
+========================================
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+class UncertaintySpec:
+class ConstraintSpec:
+class ShapeSpec:
+class CardSpec:
+    def __post_init__(self):
+        ... # [Logic Trimming]
+def _has_shape_mapping(shape_specs: List[ShapeSpec], process: str, channel: str):
+    ... # [Logic Trimming]
+def _tokenize_card_line(line: str):
+    ... # [Logic Trimming]
+def parse_model_card(card_path: str, *, shape_extension: str, shape_description: str):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/plot_analysis_common.py
+========================================
+import argparse
+import importlib
+import os
+import dill
+def load_snapshot(snapshot_path):
+    ... # [Logic Trimming]
+def run_plot_snapshot_cli(plot_summary_artifacts_fn):
+    ... # [Logic Trimming]
+def run_backend_plot_snapshot_cli(backend_name):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/analysis_reporting.py
+========================================
+import json
+import os
+import numpy as np
+def distribution_summary(values):
+    ... # [Logic Trimming]
+def init_ensemble_report(summaries, total_time_s):
+    ... # [Logic Trimming]
+def add_fit_quality(report, summaries, include_invalid_fraction=True):
+    ... # [Logic Trimming]
+def add_poi_distributions(report, summaries):
+    ... # [Logic Trimming]
+def save_ensemble_report(report, output_path, report_file=None):
+    ... # [Logic Trimming]
+def resolve_output_or_default(output_path, seed, extension):
+    ... # [Logic Trimming]
+def print_runtime_summary(summaries, total_time_s):
+    ... # [Logic Trimming]
+def save_and_print_ensemble_report(summaries, total_time_s, output_path, report_file, build_report_fn):
+    ... # [Logic Trimming]
+def save_and_print_snapshot(output_path, fit_model, summaries, args, save_snapshot_fn):
+    ... # [Logic Trimming]
+def maybe_plot_summary_artifacts(args, summaries, fit_model, plot_fn):
+    ... # [Logic Trimming]
+
+### FILE: python/backends/zmodel/__init__.py
+========================================
+
+
+### FILE: python/backends/zmodel/implementation.py
+========================================
+from backends.common import add_feldman_cousins_arguments, add_shared_analysis_arguments, add_source_arguments, package_version
+from backends.base import BaseBackend
+class ZModelBackend:
+    def runtime_versions(self):
+        ... # [Logic Trimming]
+    def add_analyze_arguments(self, parser):
+        ... # [Logic Trimming]
+    def build_defaults(self):
+        ... # [Logic Trimming]
+    def build_model(self, input_card, output_file):
+        ... # [Logic Trimming]
+    def load_summary(self, model_file, verbose=0):
+        ... # [Logic Trimming]
+    def run_analysis(self, args):
+        ... # [Logic Trimming]
+def create_backend():
+    ... # [Logic Trimming]
+
+### FILE: python/backends/hfmodel/__init__.py
+========================================
+
+
+### FILE: python/backends/hfmodel/implementation.py
+========================================
+from backends.common import add_feldman_cousins_arguments, add_shared_analysis_arguments, add_source_arguments, package_version
+from backends.base import BaseBackend
+class HFModelBackend:
+    def runtime_versions(self):
+        ... # [Logic Trimming]
+    def add_analyze_arguments(self, parser):
+        ... # [Logic Trimming]
+    def build_defaults(self):
+        ... # [Logic Trimming]
+    def build_model(self, input_card, output_file):
+        ... # [Logic Trimming]
+    def load_summary(self, model_file, verbose=0):
+        ... # [Logic Trimming]
+    def run_analysis(self, args):
+        ... # [Logic Trimming]
+def create_backend():
+    ... # [Logic Trimming]
+
+### FILE: python/backends/roomodel/__init__.py
+========================================
+from backends.roomodel.implementation import create_backend
+
+### FILE: python/backends/roomodel/implementation.py
+========================================
+from backends.base import BaseBackend
+from backends.common import add_feldman_cousins_arguments, add_shared_analysis_arguments, add_source_arguments, package_version
+class RooModelBackend:
+    def runtime_versions(self):
+        ... # [Logic Trimming]
+    def add_analyze_arguments(self, parser):
+        ... # [Logic Trimming]
+    def build_defaults(self):
+        ... # [Logic Trimming]
+    def build_model(self, input_card, output_file):
+        ... # [Logic Trimming]
+    def load_summary(self, model_file, verbose=0):
+        ... # [Logic Trimming]
+    def run_analysis(self, args):
+        ... # [Logic Trimming]
+def create_backend():
+    ... # [Logic Trimming]
+
+### FILE: python/backends/roomodel/analysis_backend.py
+========================================
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
+from backends.analysis_backend import AnalysisBackend
+from backends.analysis_types import FitResult, HypothesisTestResult
+from backends.analysis_common import is_signal_strength_poi
+def _get_root():
+    """Import ROOT and suppress RooFit messages."""
+    ... # [Logic Trimming]
+class RooFitAnalysisState:
+    """Mutable context bundling all RooFit fit-iteration state."""
+class RooFitAnalysisBackend:
+    """AnalysisBackend implementation wrapping RooFit (roomodel)."""
+    def __init__(self, workspace: Any, model: Any, inner_model: Any, poi: Any, poi_name: str, fit_model: Any, observed_data: Any):
+        """Initialize the RooFit backend adapter.
+
+Parameters
+----------
+workspace : RooWorkspace
+    The RooWorkspace containing all variables and PDFs.
+model : RooPdf
+    The model PDF for fitting.
+inner_model : RooPdf
+    Unwrapped model for toy generation (e.g., without constraint PDFs).
+poi : RooRealVar
+    The parameter of interest.
+poi_name : str
+    Name of the POI.
+fit_model : roomodel.FitModel
+    The FitModel with process and signal information.
+observed_data : RooDataset or RooDataHist or None
+    The observed data (may be None)."""
+        ... # [Logic Trimming]
+    def fit(self, state: RooFitAnalysisState):
+        """Run an unconstrained MLE fit and return the result."""
+        ... # [Logic Trimming]
+    def fixed_poi_fit(self, state: RooFitAnalysisState, poi_value: float):
+        """Run an MLE fit with the POI fixed at *poi_value*."""
+        ... # [Logic Trimming]
+    def evaluate_nll(self, state: RooFitAnalysisState):
+        """Return the NLL evaluated at the current parameter values."""
+        ... # [Logic Trimming]
+    def hypothesis_test(self, state: RooFitAnalysisState, poi_test: float, poi_alt: float=0.0):
+        """Not implemented for roomodel FC mode."""
+        ... # [Logic Trimming]
+    def get_poi_value(self, state: RooFitAnalysisState):
+        """Return the current value of the POI."""
+        ... # [Logic Trimming]
+    def set_poi_value(self, state: RooFitAnalysisState, value: float):
+        """Set the POI to a specific value."""
+        ... # [Logic Trimming]
+    def poi_name(self, state: RooFitAnalysisState):
+        """Return the name of the POI."""
+        ... # [Logic Trimming]
+    def parameter_names(self, state: RooFitAnalysisState):
+        """Return names of all floating parameters."""
+        ... # [Logic Trimming]
+    def parameter_values(self, state: RooFitAnalysisState):
+        """Return {name: value} for all parameters."""
+        ... # [Logic Trimming]
+    def snapshot_parameters(self, state: RooFitAnalysisState):
+        """Capture a snapshot of current parameter state."""
+        ... # [Logic Trimming]
+    def restore_parameters(self, state: RooFitAnalysisState, snapshot: Any):
+        """Restore parameter state from a snapshot."""
+        ... # [Logic Trimming]
+    def generate_toy_data(self, state: RooFitAnalysisState):
+        """Generate a toy dataset at current parameter values."""
+        ... # [Logic Trimming]
+    def generate_asimov_data(self, state: RooFitAnalysisState):
+        """Return an Asimov (expected) dataset."""
+        ... # [Logic Trimming]
+    def get_observed_data(self, state: RooFitAnalysisState):
+        """Return the observed dataset."""
+        ... # [Logic Trimming]
+    def get_current_data(self, state: RooFitAnalysisState):
+        """Return the currently loaded dataset."""
+        ... # [Logic Trimming]
+    def set_data(self, state: RooFitAnalysisState, data: Any):
+        """Set the current dataset."""
+        ... # [Logic Trimming]
+    def poi_uncertainty_hesse(self, state: RooFitAnalysisState, fit_result: FitResult):
+        """Return POI uncertainty from Hessian."""
+        ... # [Logic Trimming]
+    def signal_nominal_yield(self):
+        """Nominal signal yield for converting mu limits to yield limits."""
+        ... # [Logic Trimming]
+    def poi_is_signal_strength(self):
+        """True if POI is a signal-strength modifier."""
+        ... # [Logic Trimming]
+    def _iter_roo_collection(collection):
+        """Iterate over a RooFit collection."""
+        ... # [Logic Trimming]
+
+### FILE: python/hfmodel/functions.py
+========================================
+from backends.model_functions import PowerLaw
+
+### FILE: python/hfmodel/analyze_model.py
+========================================
+import json
+import os
+import time
+import numpy as np
+import pyhf
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.analysis_console import print_dataset_summary_header, print_limit_summary_lines
+from backends.analysis_common import load_analysis_model, normalize_output_path, resolve_dataset_mode
+from backends.analysis_reporting import add_fit_quality, add_poi_distributions, distribution_summary, init_ensemble_report, print_runtime_summary, resolve_output_or_default, save_and_print_ensemble_report, save_and_print_snapshot, maybe_plot_summary_artifacts
+from backends.print_model_helpers import print_model_info
+from hfmodel.analysis_core import configure_runtime, run_analysis
+from hfmodel.analysis_overrides import apply_parameter_overrides
+from hfmodel.analyze_plotting import plot_summary_artifacts
+from hfmodel.build_model_from_text import build_model_from_card, parse_model_card
+from hfmodel.model_io import load_fit_model
+def _load_analysis_model(model_file=None, input_card=None):
+    ... # [Logic Trimming]
+def _configure_pyhf_backend(backend_name):
+    ... # [Logic Trimming]
+def _print_dataset_summary(summary, is_observed_fit=False):
+    ... # [Logic Trimming]
+def _build_ensemble_evaluation_report(summaries, total_time_s):
+    ... # [Logic Trimming]
+def _save_analysis_snapshot(output_path, fit_model, summaries, args):
+    ... # [Logic Trimming]
+def run_analysis_cli(args):
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/convert_rooworkspace_shapes.py
+========================================
+import argparse
+import json
+import os
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Tuple
+import numpy as np
+from hfmodel.model_io import load_fit_model
+class ConversionError:
+class WorkspaceConversionResult:
+def _configure_root_logging():
+    ... # [Logic Trimming]
+def _iter_roo_collection(collection):
+    ... # [Logic Trimming]
+def _collect_workspaces(root_file):
+    ... # [Logic Trimming]
+def _sanitize_name(name: str):
+    ... # [Logic Trimming]
+def _resolve_root_path(card_dir: str, path: str):
+    ... # [Logic Trimming]
+def _parse_bin_edges(edges_text: Optional[str]):
+    ... # [Logic Trimming]
+def _axis_edges_from_th1(hist_obj):
+    ... # [Logic Trimming]
+def _counts_from_th1(hist_obj):
+    ... # [Logic Trimming]
+def _pdf_observable(pdf, workspace):
+    ... # [Logic Trimming]
+def _histogram_from_pdf(pdf, workspace, default_bins: Optional[np.ndarray], n_bins: Optional[int]):
+    ... # [Logic Trimming]
+def _extract_observation_counts(workspace, channel_name: str, edges: np.ndarray):
+    ... # [Logic Trimming]
+def _make_sample_from_counts(name: str, counts: np.ndarray):
+    ... # [Logic Trimming]
+def convert_root_workspaces_to_pyhf(root_path: str, output_dir: str, output_prefix: str, bins: Optional[int], bin_edges: Optional[np.ndarray], workspace_prefix: bool):
+    ... # [Logic Trimming]
+def _collect_histosys_variations(sample_block: Dict):
+    ... # [Logic Trimming]
+def export_pyhf_to_root(input_model: str, output_root: str, workspace_name: str, observable_min: float, observable_max: Optional[float]):
+    ... # [Logic Trimming]
+def _build_parser():
+    ... # [Logic Trimming]
+def main():
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/__init__.py
+========================================
+
+
+### FILE: python/hfmodel/utilities.py
+========================================
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+class FitModel:
+
+### FILE: python/hfmodel/load_model.py
+========================================
+import os
+from hfmodel.model_io import load_fit_model
+def _format_parameter_entry(param_set):
+    ... # [Logic Trimming]
+def _parset_metadata(parset):
+    ... # [Logic Trimming]
+def load_and_summarize_model(model_file: str, verbose: int=0):
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/analysis_backend.py
+========================================
+from __future__ import annotations
+import json
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
+import pyhf
+from backends.analysis_backend import AnalysisBackend
+from backends.analysis_types import FitResult, HypothesisTestResult
+class PyhfAnalysisState:
+    """Mutable context bundling all pyhf fit-iteration state."""
+class PyhfAnalysisBackend:
+    """AnalysisBackend implementation wrapping pyhf."""
+    def fit(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def fixed_poi_fit(self, state: PyhfAnalysisState, poi_value: float):
+        ... # [Logic Trimming]
+    def evaluate_nll(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def hypothesis_test(self, state: PyhfAnalysisState, poi_test: float, poi_alt: float=0.0):
+        ... # [Logic Trimming]
+    def get_poi_value(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def set_poi_value(self, state: PyhfAnalysisState, value: float):
+        ... # [Logic Trimming]
+    def poi_name(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def parameter_names(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def parameter_values(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def snapshot_parameters(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def restore_parameters(self, state: PyhfAnalysisState, snapshot: List[float]):
+        ... # [Logic Trimming]
+    def generate_toy_data(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def generate_asimov_data(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def get_observed_data(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def get_current_data(self, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+    def set_data(self, state: PyhfAnalysisState, data: Any):
+        ... # [Logic Trimming]
+    def poi_uncertainty_hesse(self, state: PyhfAnalysisState, fit_result: FitResult):
+        ... # [Logic Trimming]
+    def signal_nominal_yield(self):
+        ... # [Logic Trimming]
+    def poi_is_signal_strength(self):
+        ... # [Logic Trimming]
+    def from_state(cls, state: PyhfAnalysisState):
+        ... # [Logic Trimming]
+class _PyhfAdapterWithState:
+    """Thin subclass that reads metadata from a bound PyhfAnalysisState."""
+    def signal_nominal_yield(self):
+        ... # [Logic Trimming]
+    def poi_is_signal_strength(self):
+        ... # [Logic Trimming]
+
+### FILE: python/hfmodel/analysis_core.py
+========================================
+from __future__ import annotations
+import json
+from typing import Dict, List, Optional, Tuple
+import numpy as np
+import pyhf
+from backends.analysis_common import resolve_data_mode as _resolve_data_mode, run_analysis_common
+def configure_runtime():
+    ... # [Logic Trimming]
+def _override_vectors(model, fit_model):
+    ... # [Logic Trimming]
+def _expected_data_for_pars(model, pars):
+    ... # [Logic Trimming]
+def _sample_full_model_data(model, truth_pars, rng):
+    ... # [Logic Trimming]
+def _generate_toy_data(model, truth_pars, rng):
+    ... # [Logic Trimming]
+def _asimov_data(model, truth_pars):
+    ... # [Logic Trimming]
+def _extract_fit_result(bestfit_result):
+    ... # [Logic Trimming]
+def _fit_status_dict(result_obj):
+    ... # [Logic Trimming]
+def _jittered_init_pars(base_init, bounds, fixed_params, rng, scale=0.25):
+    ... # [Logic Trimming]
+def _run_mle_fit(model, data, init_pars, par_bounds, fixed_params):
+    ... # [Logic Trimming]
+def _fit_with_retries(model, data, init_pars, par_bounds, fixed_params, rng, max_retries=4):
+    ... # [Logic Trimming]
+def _objective_twice_nll(model, data, pars):
+    ... # [Logic Trimming]
+def _numerical_hessian_uncertainties(model, data, bestfit, par_bounds, fixed_params):
+    ... # [Logic Trimming]
+def _uncertainties_from_hessian_matrix(hessian_matrix, fixed_params):
+    ... # [Logic Trimming]
+def _hessian_from_minuit_result(result_obj, n_pars):
+    ... # [Logic Trimming]
+def _hessian_from_jax(model, data, bestfit):
+    ... # [Logic Trimming]
+def _estimate_hessian_uncertainties(model, data, bestfit, par_bounds, fixed_params, result_obj, backend_name, hessian_method):
+    ... # [Logic Trimming]
+def _estimate_poi_uncertainty(model, data, bestfit, init_pars, par_bounds, fixed_params):
+    ... # [Logic Trimming]
+def _channel_dataset_plot_payload(model, data, bestfit, signal_processes, prefit_pars, fit_param_unc, par_bounds):
+    ... # [Logic Trimming]
+def _checkpoint_payload(summaries, config):
+    ... # [Logic Trimming]
+def _write_checkpoint(path, summaries, config):
+    ... # [Logic Trimming]
+def run_analysis(fit_model, toys, use_observed_data, use_asimov_data, cls_alpha, signal_strength, cls_scan_points, cls_smart_scan, poi_scan_max, feldman_cousins_alpha, feldman_cousins_scan_points, feldman_cousins_n_toys, feldman_cousins_scan_max, progress_callback=None, checkpoint_freq=None, checkpoint_path=None, existing_results=None, resume_from_index=0, compute_nll_scan=False, nll_scan_points=121, seed=1234, backend_name='scipy', hessian_method='auto'):
+    """Run the pyhf analysis, delegating backend-agnostic work to the common orchestrator.
+
+The function:
+  1. Applies parameter overrides and builds init_pars / par_bounds / fixed_params.
+  2. Constructs a ``PyhfAnalysisState`` and a ``PyhfAnalysisBackend`` adapter.
+  3. Delegates to ``run_analysis_common`` for all CLs / FC / NLL-scan / loop logic.
+  4. Enriches each summary with the pyhf-specific dataset_plot payload."""
+    ... # [Logic Trimming]
+def _enrich_summaries_with_plots(summaries, state, model, init_pars, par_bounds, fit_model):
+    """Add channel dataset_plot payloads to each summary using best-fit values."""
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/analyze_plotting.py
+========================================
+import os
+import numpy as np
+from backends.analyze_plotting_common import plot_cls_scan as _plot_cls_scan_common, plot_delta_nll_scan as _plot_delta_nll_scan_common, plot_feldman_cousins as _plot_feldman_cousins_common, plot_hist as _plot_hist_common
+def _hist(values, title, xlabel, output_file, bins=30):
+    ... # [Logic Trimming]
+def _plot_first_dataset_channels(summary, plot_dir):
+    ... # [Logic Trimming]
+def _plot_delta_nll(summary, plot_dir):
+    ... # [Logic Trimming]
+def _plot_cls_band(summary, plot_dir):
+    ... # [Logic Trimming]
+def _plot_feldman_cousins_construction(summary, plot_dir):
+    ... # [Logic Trimming]
+def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/convert_datacard_format.py
+========================================
+import json
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.datacard_convert_common import build_backend_converter_functions, run_converter_cli
+def _load_workspace_payload_json(shape_path: str):
+    ... # [Logic Trimming]
+def main():
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/model_io.py
+========================================
+import json
+from typing import Any, Dict, Optional
+import pyhf
+from hfmodel.utilities import FitModel
+def save_fit_model_bundle(fit_model: FitModel, output_file: str):
+    ... # [Logic Trimming]
+def _fit_model_from_workspace_payload(workspace_payload: Dict[str, Any], fit_metadata: Optional[Dict[str, Any]]=None):
+    ... # [Logic Trimming]
+def load_fit_model(model_file: str):
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/analysis_overrides.py
+========================================
+from backends.analysis_overrides_common import parse_parameter_name_list, parse_parameter_range_map, parse_parameter_value_map, validate_override_names
+def apply_parameter_overrides(fit_model, set_values_spec, set_ranges_spec, freeze_spec):
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/build_model_from_text.py
+========================================
+import copy
+import json
+import os
+from typing import Dict, List, Optional, Tuple
+import numpy as np
+import pyhf
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.card_parser import CardSpec, parse_model_card as parse_common_model_card
+from backends.builder_common import kind_token, make_term_mappings, make_term_names, resolve_shape_file_for_term
+from hfmodel.model_io import save_fit_model_bundle
+from hfmodel.utilities import FitModel
+def parse_model_card(card_path: str):
+    ... # [Logic Trimming]
+def _load_workspace_payload(file_path: str):
+    ... # [Logic Trimming]
+def _normalize_pdf(values: List[float], context: str):
+    ... # [Logic Trimming]
+def _common_process_aliases(process: str):
+    ... # [Logic Trimming]
+def _find_sample_block(channel_block: Dict, process: str):
+    ... # [Logic Trimming]
+def _resolve_workspace_payloads(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def _find_channel_block(workspace_payload: Dict, channel: str):
+    ... # [Logic Trimming]
+def _find_observation_block(workspace_payload: Dict, channel: str):
+    ... # [Logic Trimming]
+def _parse_norm_pair(raw_value: str):
+    ... # [Logic Trimming]
+def _apply_rate_to_sample_data(sample_data: List[float], target_rate: Optional[float]):
+    ... # [Logic Trimming]
+def _rescale_shape_modifier_data(modifier: Dict, scale_factor: float):
+    ... # [Logic Trimming]
+def _rescale_staterror_modifier_data(modifier: Dict, scale_factor: float):
+    ... # [Logic Trimming]
+def _build_counting_workspace(card: CardSpec):
+    ... # [Logic Trimming]
+def _build_shape_workspace(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def build_model_from_card(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def build_and_save_model_from_card_file(input_card: str, output_file: str):
+    ... # [Logic Trimming]
+
+### FILE: python/hfmodel/plot_analysis.py
+========================================
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.plot_analysis_common import run_backend_plot_snapshot_cli
+def main():
+    ... # [Logic Trimming]
+
+### FILE: python/roomodel/analyze_model.py
+========================================
+import json
+import os
+import time
+from statistics import NormalDist
+import numpy as np
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.analysis_common import is_signal_strength_poi, normalize_output_path, resolve_dataset_mode
+from backends.analysis_reporting import add_fit_quality, add_poi_distributions, distribution_summary, init_ensemble_report, maybe_plot_summary_artifacts, print_runtime_summary, resolve_output_or_default, save_and_print_ensemble_report, save_and_print_snapshot
+from backends.analysis_console import print_limit_summary_lines
+from backends.print_model_helpers import print_model_info
+from roomodel.analyze_plotting import plot_summary_artifacts
+from roomodel.build_model_from_text import build_and_save_model_from_card_file
+from roomodel.model_io import load_fit_model, load_workspace_and_metadata
+def _get_root():
+    ... # [Logic Trimming]
+def _iter_roo_collection(collection):
+    ... # [Logic Trimming]
+def _load_analysis_model(model_file=None, input_card=None):
+    ... # [Logic Trimming]
+def _find_sim_pdf_in_prodpdf(prod_pdf, workspace):
+    """Return the RooSimultaneous (or RooProdPdf channel model) embedded inside a
+RooProdPdf constraint wrapper, or *prod_pdf* itself if none is found."""
+    ... # [Logic Trimming]
+def _workspace_objects(fit_model):
+    ... # [Logic Trimming]
+def _resolve_poi_var(workspace, fit_model):
+    ... # [Logic Trimming]
+def _resolve_obs_var(dataset_or_ws, workspace):
+    ... # [Logic Trimming]
+def _unwrap_extended_pdf(pdf):
+    """Return the inner shape PDF from a RooExtendPdf, or the PDF itself."""
+    ... # [Logic Trimming]
+def _model_observable_set(workspace, model, dataset, obs_var=None):
+    ... # [Logic Trimming]
+def _capture_nominal_parameter_state(workspace, model, dataset_hint, obs_var=None):
+    ... # [Logic Trimming]
+def _restore_parameter_state(workspace, state):
+    ... # [Logic Trimming]
+def _dataset_plot_payload(dataset, obs_var, fit_mode):
+    ... # [Logic Trimming]
+def _to_binned_data(dataset, obs_var, bins):
+    ... # [Logic Trimming]
+def _fit_component_plot_payload(workspace, model, fit_model, fit_data, obs_var, dataset_plot, binned_bins):
+    ... # [Logic Trimming]
+def _resolve_channel_obs_var(workspace, channel_pdf):
+    ... # [Logic Trimming]
+def _channel_plot_payloads(workspace, model, fit_model, fit_data, fit_mode, binned_bins):
+    ... # [Logic Trimming]
+def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=False, poi_scan_min=None):
+    ... # [Logic Trimming]
+def _interp_first_crossing(x_vals, y_vals, threshold):
+    ... # [Logic Trimming]
+def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0):
+    ... # [Logic Trimming]
+def _apply_feldman_cousins_summary_from_scan(summary, alpha, scan_points, n_toys, poi_min_limit=0.0):
+    """Apply Feldman-Cousins confidence interval using the likelihood-ratio method.
+
+This is now a fallback for when a true Neyman-construction FC is not available.
+For the true FC with toys, use _apply_feldman_cousins_true() which requires
+access to the model and workspace."""
+    ... # [Logic Trimming]
+def _apply_feldman_cousins_true(summary, alpha, scan_points, n_toys, poi_min_limit, workspace, model, data, fit_model, dataset_id=0, seed=1234):
+    """Apply true Feldman-Cousins Neyman construction with toy generation per grid point.
+
+This uses the compute_feldman_cousins() algorithm from analysis_common.py which
+generates toys at each POI value and derives per-point critical values.
+
+Parameters
+----------
+summary : dict
+    Analysis summary to update with FC results.
+alpha : float
+    Significance level (e.g., 0.05 for 95% CL).
+scan_points : int
+    Number of grid points for the FC scan.
+n_toys : int
+    Number of toy datasets per grid point.
+poi_min_limit : float
+    Minimum POI value to consider.
+workspace : RooWorkspace
+    The workspace containing the model and data.
+model : RooPdf
+    The model PDF to use for fits and toy generation.
+data : RooDataset or RooDataHist
+    The observed dataset (iteration dataset, not necessarily observed).
+fit_model : roomodel.FitModel
+    Metadata about the fit model.
+dataset_id : int
+    Seed component for reproducibility.
+seed : int
+    Random seed."""
+    ... # [Logic Trimming]
+def _extract_fit_params(fit_result, workspace):
+    """Extract floating parameter values and uncertainties from RooFit fit result.
+
+Parameters
+----------
+fit_result : RooFitResult
+    The fit result object from model.fitTo()
+workspace : RooWorkspace
+    The RooWorkspace containing the parameters
+    
+Returns
+-------
+tuple of (dict, dict)
+    (param_values, param_uncertainties) with all floating parameters"""
+    ... # [Logic Trimming]
+def _run_single_fit(workspace, model, data, fit_model, fit_mode, binned_bins, input_obs_var=None, collect_plot_details=False, limit_scan_points=None, limit_scan_full_range=False, limit_scan_poi_min=None, inner_model=None):
+    ... # [Logic Trimming]
+def _generate_dataset(workspace, model, dataset_hint, obs_var, fit_mode, binned_bins):
+    ... # [Logic Trimming]
+def _build_toy_for_simultaneous(workspace, model, fit_mode):
+    ... # [Logic Trimming]
+def _build_asimov_for_simultaneous(workspace, model):
+    ... # [Logic Trimming]
+def _build_ensemble_evaluation_report(summaries, total_time_s):
+    ... # [Logic Trimming]
+def _save_analysis_snapshot(output_path, fit_model, summaries, args):
+    ... # [Logic Trimming]
+def _print_toy_poi_ranges(summaries):
+    ... # [Logic Trimming]
+def _parse_name_value_csv(spec):
+    ... # [Logic Trimming]
+def _parse_name_list_csv(spec):
+    ... # [Logic Trimming]
+def _apply_parameter_overrides(workspace, args):
+    ... # [Logic Trimming]
+def _enforce_physical_poi_bounds(workspace, fit_model):
+    ... # [Logic Trimming]
+def run_analysis_cli(args):
+    ... # [Logic Trimming]
+
+### FILE: python/roomodel/__init__.py
+========================================
+
+
+### FILE: python/roomodel/utilities.py
+========================================
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+class FitModel:
+
+### FILE: python/roomodel/load_model.py
+========================================
+import os
+from roomodel.model_io import load_fit_model, load_workspace_and_metadata
+def _iter_roo_collection(collection):
+    ... # [Logic Trimming]
+def _collect_observable_names(workspace):
+    """Return the set of variable names that are true fit observables.
+
+A fit observable is a non-constant RooRealVar that is a direct server of
+a leaf (non-composite) PDF.  This correctly excludes parameters, which
+are constant in the workspace layout produced by the roomodel builder."""
+    ... # [Logic Trimming]
+def _count_floating_params(workspace, observable_names):
+    """Count non-constant workspace variables that are not fit observables."""
+    ... # [Logic Trimming]
+def load_and_summarize_model(model_file: str, verbose: int=0):
+    ... # [Logic Trimming]
+
+### FILE: python/roomodel/analyze_plotting.py
+========================================
+import os
+import numpy as np
+from backends.analyze_plotting_common import plot_cls_scan as _plot_cls_scan_common, plot_delta_nll_scan as _plot_delta_nll_scan_common, plot_feldman_cousins as _plot_feldman_cousins_common, plot_hist as _plot_hist_common
+def _hist(values, title, xlabel, output_file, bins=30):
+    ... # [Logic Trimming]
+def _plot_dataset(summary, plot_dir):
+    ... # [Logic Trimming]
+def _plot_delta_nll(summary, plot_dir):
+    ... # [Logic Trimming]
+def _plot_cls_band(summary, plot_dir):
+    ... # [Logic Trimming]
+def _plot_feldman_cousins_construction(summary, plot_dir):
+    ... # [Logic Trimming]
+def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):
+    ... # [Logic Trimming]
+
+### FILE: python/roomodel/model_io.py
+========================================
+import json
+import os
+from typing import Dict
+from roomodel.utilities import FitModel
+def _get_root():
+    ... # [Logic Trimming]
+def _read_metadata(root_file_path: str):
+    ... # [Logic Trimming]
+def _write_metadata(tf, metadata: Dict):
+    ... # [Logic Trimming]
+def save_fit_model_bundle(payload: Dict, output_file: str):
+    ... # [Logic Trimming]
+def load_fit_model(model_file: str):
+    ... # [Logic Trimming]
+def load_workspace_and_metadata(model_file: str):
+    ... # [Logic Trimming]
+
+### FILE: python/roomodel/build_model_from_text.py
+========================================
+import os
+import pathlib
+import sys
+from typing import Dict, List, Optional, Tuple
+import numpy as np
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.builder_common import resolve_shape_file_for_term
+from backends.card_parser import CardSpec, parse_model_card as parse_common_model_card
+from roomodel.model_io import save_fit_model_bundle
+def _get_root():
+    ... # [Logic Trimming]
+def parse_model_card(card_path: str):
+    ... # [Logic Trimming]
+def _common_process_aliases(process: str):
+    ... # [Logic Trimming]
+def _first_workspace_from_file(root_path: str):
+    ... # [Logic Trimming]
+def _iter_roo_collection(collection):
+    ... # [Logic Trimming]
+def _pdf_by_name_or_aliases(workspace, process_name: str):
+    ... # [Logic Trimming]
+def _data_obs_by_channel(workspace, channel: str):
+    ... # [Logic Trimming]
+def _make_obs_var(name: str, lower: float=0.0, upper: float=1.0):
+    ... # [Logic Trimming]
+def _make_signal_strength_var(ws, signal_processes: List[str], mu_min: float=0.0, mu_max: float=10.0):
+    """Create the primary signal-strength POI if a signal process exists."""
+    ... # [Logic Trimming]
+def _physical_mu_min_from_card(card: CardSpec, signal_processes: List[str]):
+    ... # [Logic Trimming]
+def _channel_rate_split(card: CardSpec, channel: str, signal_processes: List[str]):
+    ... # [Logic Trimming]
+def _build_lnn_constraints(ws, card, process_names, bin_names, yield_var_names):
+    """Build lnN/gs nuisance parameters, constraint PDFs, and scale factors.
+
+For each active uncertainty row in the card:
+  - Create a floating nuisance parameter ``theta_<name>`` (range -7..7, init 0).
+  - Create a ``RooGaussian`` constraint PDF ``constraint_<name>`` (mean=0, sigma=1).
+  - For each (process, channel) pair with a non-"-" value, replace the existing
+    yield variable in *yield_var_names* with a ``RooFormulaVar`` that scales the
+    nominal yield by the appropriate factor.
+
+Parameters
+----------
+ws : RooWorkspace
+    The workspace being built (modified in-place).
+card : CardSpec
+    Parsed model card.
+process_names : list[str]
+    Process names in card column order.
+bin_names : list[str]
+    Channel names in card column order (parallel to process_names).
+yield_var_names : dict[tuple[str,str], str]
+    Mapping (process, channel) -> name of the nominal yield object in *ws*.
+    This dict is updated in-place: constrained yields get new names.
+
+Returns
+-------
+list[str]
+    Names of the constraint PDFs imported into *ws*."""
+    ... # [Logic Trimming]
+def _wrap_with_constraints(ws, sim_pdf_name, constraint_pdf_names):
+    """Replace simPdf in ws with simPdf * prod(constraints) as 'constrainedPdf'.
+
+Returns the name of the final PDF to use as the model."""
+    ... # [Logic Trimming]
+def _build_counting_workspace(card: CardSpec):
+    ... # [Logic Trimming]
+def _resolve_shape_terms(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def _extract_obs_from_pdf(pdf, workspace):
+    ... # [Logic Trimming]
+def _build_shape_workspace(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def build_model_from_card(card: CardSpec, card_dir: str):
+    ... # [Logic Trimming]
+def build_and_save_model_from_card_file(card_path: str, output_file: str):
+    ... # [Logic Trimming]

@@ -1,0 +1,22 @@
+# Ignore binary ROOT data files and structural layouts
+**/*.root
+**/*.root.html
+
+# Ignore Python serialization/pickle files from fits and data caching
+**/*.pkl
+**/*.pickle
+**/*.joblib
+
+# Ignore pyhf workspace cache and JSON outputs
+**/cache/
+**/*_workspace.json
+
+# Ignore standard Python cache directories
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Ignore local configuration or temporary run directories
+.pytest_cache/
+.egg-info/

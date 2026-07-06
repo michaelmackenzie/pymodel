@@ -72,7 +72,7 @@ class RooFitAnalysisState:
 class RooFitAnalysisBackend(AnalysisBackend):
     """AnalysisBackend implementation wrapping RooFit (roomodel)."""
 
-    def __init__(self, workspace: Any, model: Any, poi: Any, poi_name: str, fit_model: Any, observed_data: Any):
+    def __init__(self, workspace: Any, model: Any, inner_model: Any, poi: Any, poi_name: str, fit_model: Any, observed_data: Any):
         """Initialize the RooFit backend adapter.
 
         Parameters
@@ -81,6 +81,8 @@ class RooFitAnalysisBackend(AnalysisBackend):
             The RooWorkspace containing all variables and PDFs.
         model : RooPdf
             The model PDF for fitting.
+        inner_model : RooPdf
+            Unwrapped model for toy generation (e.g., without constraint PDFs).
         poi : RooRealVar
             The parameter of interest.
         poi_name : str
@@ -91,7 +93,8 @@ class RooFitAnalysisBackend(AnalysisBackend):
             The observed data (may be None).
         """
         self.workspace = workspace
-        self.model = model
+        self.model = model  # Constrained model used for fitting
+        self.inner_model = inner_model  # Unwrapped model for toy generation
         self.poi = poi
         self._poi_name = poi_name
         self.fit_model = fit_model

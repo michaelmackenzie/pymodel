@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# pyconvert — unified conversion entry point for pymodel backends
+#
+# Full-conversion (recommended):
+#   pyconvert <backend> <input_card> <output_card> [opts...]
+#
+#   Converts both the text datacard AND the referenced ROOT workspace files in
+#   one step.  The backend workspace file (.json / .pkl / .root) is written to
+#   the same directory as <output_card> unless --output-dir is given.
+#
+# Sub-command form (for fine-grained control):
+#   pyconvert <backend> datacard <input_card> <output_card> [opts...]
+#   pyconvert <backend> shapes   [shapes-specific args...]
+#
+# Backends:   zmodel | hfmodel | roomodel
+# Sub-commands: datacard | shapes
+#
+# Full-conversion examples:
+#   # Combine card + workspace -> hfmodel (card + .json workspace)
+#   pyconvert hfmodel combine_card.txt hfmodel_card.txt
+#
+#   # Combine card + workspace -> zmodel (card + .pkl workspace)
+#   pyconvert zmodel combine_card.txt zmodel_card.txt
+#
+#   # Combine card + workspace -> roomodel (card + .root workspace)
+#   pyconvert roomodel combine_card.txt roomodel_card.txt
+#
+#   # Write converted workspace to a specific directory
+#   pyconvert hfmodel combine_card.txt out/hfmodel_card.txt --output-dir out/
+#
+#   # Skip automatic workspace conversion (card text only)
+#   pyconvert hfmodel combine_card.txt hfmodel_card.txt --skip-workspace-conversion
+#
+# Sub-command examples:
+#   # Datacard conversion only
+#   pyconvert hfmodel datacard combine_card.txt hfmodel_card.txt
+#
+#   # Workspace conversion only (roomodel)
+#   pyconvert roomodel shapes --combine-card combine_card.txt --output-root shapes.root
+#
+#   # Inspect a Combine workspace
+#   pyconvert roomodel shapes --combine-card combine_card.txt --inspect
+#
+# Run 'pyconvert --help' or 'pyconvert <backend> --help' for full option lists.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_DIR="${SCRIPT_DIR}/../python"
+
+# Prepend python/ so that 'import backends', 'import roomodel', etc. resolve
+# before ensure_repo_root_on_path() has had a chance to run.
+export PYTHONPATH="${PYTHON_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  pyconvert <backend> <input_card> <output_card> [opts...]   # full conversion
+  pyconvert <backend> datacard <input_card> <output_card> [opts...]
+  pyconvert <backend> shapes [shapes-args...]
+
+Backends:
+  hfmodel   - HistFactory/pyhf model (shapes: .json)
+  zmodel    - zfit model             (shapes: .pkl)
+  roomodel  - RooFit model           (shapes: .root RooWorkspace)
+
+Full-conversion mode (backend + input_card + output_card):
+  Converts the Combine text card AND automatically converts every ROOT
+  workspace file referenced in the card to the backend's native format.
+  The backend workspace file is written alongside the output card.
+
+  Options:
+    --output-dir DIR            Directory for the converted workspace file
+                                (default: directory of <output_card>)
+    --skip-workspace-conversion Only convert the text card; skip workspace
+    --shapes-file FILE          Explicit backend shapes file path for the card
+    --direction DIR             Force conversion direction (auto-detect default)
+    --help, -h                  Show full option list
+
+Sub-command 'datacard':
+  Same as full-conversion mode.  Accepts all the same options plus
+  backend-to-combine options (--root-file, --workspace-name, --pdf-template,
+  --syst-template).
+
+Sub-command 'shapes':
+  Invoke the workspace converter directly without converting the text card.
+  hfmodel/zmodel: pyconvert <backend> shapes <input.root> [--output-dir DIR]
+  roomodel:       pyconvert roomodel shapes --combine-card combine.txt --output-root out.root
+                  pyconvert roomodel shapes --roomodel-root ws.root --output-root out.root
+                  pyconvert roomodel shapes --combine-card combine.txt --inspect
+
+Examples:
+  pyconvert hfmodel  combine_card.txt hfmodel_card.txt
+  pyconvert zmodel   combine_card.txt zmodel_card.txt
+  pyconvert roomodel combine_card.txt roomodel_card.txt
+  pyconvert hfmodel  combine_card.txt hfmodel_card.txt --output-dir ./converted/
+  pyconvert hfmodel  hfmodel_card.txt combine_out.txt  --direction hfmodel-to-combine
+  pyconvert roomodel shapes --combine-card combine_card.txt --inspect
+EOF
+    exit 0
+}
+
+# ── Argument parsing ─────────────────────────────────────────────────────────
+
+if [[ $# -lt 1 || "$1" == "--help" || "$1" == "-h" ]]; then
+    usage
+fi
+
+BACKEND="$1"
+shift
+
+# Normalise backend
+case "${BACKEND}" in
+    zmodel|hfmodel|roomodel)
+        ;;
+    *)
+        echo "Error: unknown backend '${BACKEND}'" >&2
+        echo "Valid backends: zmodel, hfmodel, roomodel" >&2
+        echo "Run 'pyconvert --help' for usage." >&2
+        exit 1
+        ;;
+esac
+
+if [[ $# -lt 1 ]]; then
+    echo "Error: missing arguments after backend '${BACKEND}'" >&2
+    echo "Run 'pyconvert --help' for usage." >&2
+    exit 1
+fi
+
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    # Show backend-specific datacard help
+    exec python3 "${PYTHON_DIR}/${BACKEND}/convert_datacard_format.py" --help
+fi
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────
+# Detect whether the user supplied an explicit sub-command ("datacard" or
+# "shapes") or used the shorthand form where the second argument is the input
+# card path directly.
+
+SUBCOMMAND="$1"
+
+case "${SUBCOMMAND}" in
+    datacard)
+        shift
+        # Explicit datacard sub-command: pass all remaining args straight through.
+        exec python3 "${PYTHON_DIR}/${BACKEND}/convert_datacard_format.py" "$@"
+        ;;
+
+    shapes)
+        shift
+        # Explicit shapes sub-command: pass all remaining args straight through.
+        exec python3 "${PYTHON_DIR}/${BACKEND}/convert_rooworkspace_shapes.py" "$@"
+        ;;
+
+    --*)
+        # Flag without a sub-command — let the datacard script handle it.
+        exec python3 "${PYTHON_DIR}/${BACKEND}/convert_datacard_format.py" "$@"
+        ;;
+
+    *)
+        # Full-conversion shorthand: SUBCOMMAND is actually <input_card>.
+        # Expect at least one more argument for <output_card>.
+        INPUT_CARD="${SUBCOMMAND}"
+        shift
+
+        if [[ $# -lt 1 ]]; then
+            echo "Error: missing <output_card> argument" >&2
+            echo "Usage: pyconvert ${BACKEND} <input_card> <output_card> [opts...]" >&2
+            exit 1
+        fi
+
+        OUTPUT_CARD="$1"
+        shift
+
+        # Resolve the input card to an absolute path so the Python script sees it
+        # consistently regardless of how it was specified (relative to CWD or
+        # card directory).  The workspace files listed inside the card are then
+        # resolved against both the card's own directory and CWD by the Python
+        # library code.
+        if [[ "${INPUT_CARD}" != /* ]]; then
+            INPUT_CARD="$(pwd)/${INPUT_CARD}"
+        fi
+
+        exec python3 "${PYTHON_DIR}/${BACKEND}/convert_datacard_format.py" \
+            "${INPUT_CARD}" "${OUTPUT_CARD}" "$@"
+        ;;
+esac

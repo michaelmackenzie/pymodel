@@ -408,6 +408,10 @@ def _build_counting_workspace(card: CardSpec):
             f"pdf_total__{channel}", f"pdf_total__{channel}",
             obs_var, expected_obj,
         )
+        # Allow non-integer observed counts so that Asimov datasets (which use
+        # the continuous expected yield as the "observed" value) are evaluated
+        # correctly via the gamma-function generalisation of the Poisson PDF.
+        channel_pdf.setNoRounding(True)
         getattr(ws, "import")(channel_pdf, ROOT.RooFit.RecycleConflictNodes())
         channel_model_names.append(f"pdf_total__{channel}")
 

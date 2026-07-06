@@ -66,6 +66,14 @@ def parse_card(card_path: str) -> ParsedCard:
     nuisances: List[List[str]] = []
     params: List[List[str]] = []
 
+    # Recognised systematic/param types for nuisance lines (<name> <type> <values...>).
+    # Any line whose second token is not in this set and that doesn't match another
+    # known keyword is silently ignored (e.g. "Combination of ...").
+    _NUISANCE_TYPES = {
+        "lnn", "shape", "lnu", "gmn", "gmc", "rateparam", "param",
+        "flatparam", "extarg", "nuisance", "edit",
+    }
+
     for fields in tokens:
         key = fields[0].lower()
 
@@ -108,8 +116,10 @@ def parse_card(card_path: str) -> ParsedCard:
         if key in ("imax", "jmax", "kmax"):
             continue
 
-        if len(fields) >= 3:
+        if len(fields) >= 2 and fields[1].lower() in _NUISANCE_TYPES:
             nuisances.append(fields)
+            continue
+        # Unrecognised line (e.g. "Combination of ...") — silently skip.
 
     if len(process_lines) < 2:
         raise ValueError("Could not find two process lines")
@@ -173,6 +183,59 @@ def default_shapes_file_from_combine(parsed: ParsedCard, backend_shape_ext: str)
         if shape.file_path.endswith(".root"):
             return os.path.splitext(shape.file_path)[0] + backend_shape_ext
     return f"converted_shapes{backend_shape_ext}"
+
+
+def resolve_shape_file(rel_path: str, card_dir: str) -> str:
+    """Resolve a shape file path, trying both card-relative and CWD-relative lookups.
+
+    For absolute paths the path is returned as-is.  For relative paths the
+    resolution order is:
+
+    1. Relative to *card_dir* (the directory containing the datacard) — this
+       is the Combine convention for files stored alongside the card.
+    2. Relative to the current working directory — useful when the user runs
+       the converter from the workspace directory rather than the card directory.
+
+    The first candidate that exists on disk is returned.  When neither exists
+    the card-relative path is returned so that callers can surface a clear
+    "file not found" error with the expected location.
+    """
+    if os.path.isabs(rel_path):
+        return rel_path
+
+    card_relative = os.path.abspath(os.path.join(card_dir, rel_path))
+    if os.path.isfile(card_relative):
+        return card_relative
+
+    cwd_relative = os.path.abspath(rel_path)
+    if os.path.isfile(cwd_relative):
+        return cwd_relative
+
+    # Neither found — return the card-relative path so errors are informative.
+    return card_relative
+
+
+def collect_root_shape_files(parsed: ParsedCard, card_dir: str) -> List[str]:
+    """Return the unique .root workspace files referenced by non-data_obs shapes lines.
+
+    Paths are resolved via :func:`resolve_shape_file`, which tries the card
+    directory first and falls back to CWD.  The order matches the first
+    occurrence of each unique resolved path so callers can use the first entry
+    as the primary workspace file.
+
+    Returns an empty list when the card has no ``shapes`` lines that point
+    to ``.root`` files (i.e. counting experiments).
+    """
+    seen: List[str] = []
+    for shape in parsed.shapes:
+        if shape.process.lower() == "data_obs":
+            continue
+        if not shape.file_path.endswith(".root"):
+            continue
+        abs_path = resolve_shape_file(shape.file_path, card_dir)
+        if abs_path not in seen:
+            seen.append(abs_path)
+    return seen
 
 
 def clean_workspace_expr(expr: str) -> str:
@@ -281,6 +344,19 @@ def observation_values(parsed: ParsedCard, channels: List[str]) -> List[str]:
     return values
 
 
+def is_counting_experiment(parsed: ParsedCard) -> bool:
+    """Return True when the card has no shape workspace references.
+
+    A card is a pure counting experiment when its ``shapes`` list is empty
+    or contains only ``data_obs`` entries — i.e. all yields are given
+    directly by the ``rate`` row and no workspace PDF is needed.
+    """
+    for shape in parsed.shapes:
+        if shape.process.lower() != "data_obs":
+            return False
+    return True
+
+
 def convert_combine_to_backend(
     parsed: ParsedCard,
     shapes_file: Optional[str],
@@ -289,18 +365,21 @@ def convert_combine_to_backend(
     map_process_names: bool = True,
     workspace_name_mapping: Optional[Dict[str, str]] = None,
 ) -> str:
-    target_shapes = shapes_file or default_shapes_file_from_combine(parsed, backend_shape_ext)
+    counting = is_counting_experiment(parsed)
     channels = channel_list(parsed.bin_names)
-    process_names = (
-        map_process_names_from_shapes(parsed, workspace_name_mapping)
-        if map_process_names
-        else list(parsed.process_names)
-    )
+    # For combine-to-backend conversion, use the bare process names from the
+    # Combine card's process row directly.  map_process_names_from_shapes
+    # expands Combine PDF templates (e.g. mumem_20_$PROCESS_pdf -> mumem_20_signal_pdf)
+    # which is the wrong direction here; the backend card should use the bare
+    # names (signal, dio, cosmic) that the workspace conversion will produce.
+    process_names = list(parsed.process_names)
 
     lines: List[str] = []
     lines.append(f"# Auto-generated {backend_name} card converted from a Combine card")
-    lines.append(f"shapes * * {target_shapes}")
-    lines.append(f"shapes data_obs * {target_shapes}")
+    if not counting:
+        target_shapes = shapes_file or default_shapes_file_from_combine(parsed, backend_shape_ext)
+        lines.append(f"shapes * * {target_shapes}")
+        lines.append(f"shapes data_obs * {target_shapes}")
     lines.append("")
     lines.append(format_row("bin", parsed.bin_names))
     lines.append(format_row("process", process_names))
@@ -319,7 +398,13 @@ def convert_combine_to_backend(
     if parsed.nuisances:
         lines.append("")
         for nuisance in parsed.nuisances:
-            lines.append(format_row(nuisance[0], nuisance[1:]))
+            rendered = format_row(nuisance[0], nuisance[1:])
+            # rateParam and 'nuisance edit' are Combine-specific; comment them
+            # out in backend cards until they are supported natively.
+            nuisance_type = nuisance[1].lower() if len(nuisance) > 1 else ""
+            if nuisance_type == "rateparam" or nuisance[0].lower() == "nuisance":
+                rendered = "# " + rendered
+            lines.append(rendered)
 
     if parsed.params:
         lines.append("")
@@ -416,6 +501,24 @@ def build_converter_parser(backend_name: str, backend_shape_ext: str) -> argpars
         ),
     )
     parser.add_argument(
+        "--output-dir",
+        default=None,
+        help=(
+            "Directory where converted workspace files are written during "
+            f"combine-to-{backend_name} conversion. "
+            "Defaults to the directory containing the output card."
+        ),
+    )
+    parser.add_argument(
+        "--skip-workspace-conversion",
+        action="store_true",
+        help=(
+            "Do not run workspace conversion even when ROOT shape files are "
+            "referenced in the Combine card.  Use this when the backend workspace "
+            "file already exists or will be created separately."
+        ),
+    )
+    parser.add_argument(
         "--no-process-name-mapping",
         action="store_true",
         help=(
@@ -460,7 +563,38 @@ def run_converter_cli(
     backend_name: str,
     backend_shape_ext: str,
     payload_loader: Callable[[str], object],
+    workspace_converter: Optional[Callable] = None,
 ) -> None:
+    """Run the datacard conversion CLI.
+
+    Parameters
+    ----------
+    backend_name:
+        Short name of the backend (e.g. ``"hfmodel"``).
+    backend_shape_ext:
+        File extension used by the backend's shape workspace (e.g. ``".json"``).
+    payload_loader:
+        Callable that loads a backend workspace file and returns a payload
+        object (used to extract ``workspace_name_mapping`` for reverse
+        conversion).
+    workspace_converter:
+        Optional callable invoked during ``combine-to-{backend_name}``
+        conversion when the Combine card references one or more ``.root``
+        shape workspace files.  Signature::
+
+            workspace_converter(
+                root_paths: List[str],
+                card_path: str,
+                output_dir: str,
+                output_prefix: str,
+            ) -> str
+
+        It must return the path to the converted backend workspace file.
+        When *None* (or ``--skip-workspace-conversion`` is given), workspace
+        conversion is skipped and the ``shapes_file`` used in the output card
+        is derived from the first ``.root`` file with the backend extension
+        substituted — the same behaviour as before this feature was added.
+    """
     args = build_converter_parser(backend_name, backend_shape_ext).parse_args()
 
     input_card = os.path.abspath(args.input_card)
@@ -478,19 +612,60 @@ def run_converter_cli(
     parsed = parse_card(input_card)
 
     if direction == f"combine-to-{backend_name}":
-        shapes_file = args.shapes_file or default_shapes_file_from_combine(parsed, backend_shape_ext)
-        workspace_name_mapping = load_workspace_name_mapping(
-            shapes_file,
-            os.path.dirname(input_card),
-            payload_loader=payload_loader,
+        counting = is_counting_experiment(parsed)
+
+        output_dir = (
+            os.path.abspath(args.output_dir)
+            if args.output_dir is not None
+            else os.path.dirname(output_card)
         )
+
+        # Determine the target shapes file for the backend card.
+        # For counting experiments there are no shapes, so shapes_file stays None
+        # unless the user forced one with --shapes-file.
+        if args.shapes_file is not None:
+            shapes_file: Optional[str] = args.shapes_file
+        elif counting:
+            shapes_file = None
+        else:
+            shapes_file = default_shapes_file_from_combine(parsed, backend_shape_ext)
+            # Place the workspace file alongside the output card when no
+            # explicit --shapes-file was given and no output-dir was set.
+            if args.output_dir is None and not os.path.isabs(shapes_file):
+                shapes_file = os.path.join(output_dir, os.path.basename(shapes_file))
+
+        # Run workspace conversion unless the card is a counting experiment,
+        # the caller opted out, or no workspace_converter was supplied.
+        skip_ws = counting or args.skip_workspace_conversion or workspace_converter is None
+        if not skip_ws:
+            card_dir = os.path.dirname(input_card)
+            root_paths = collect_root_shape_files(parsed, card_dir)
+            if root_paths:
+                output_prefix = os.path.splitext(os.path.basename(shapes_file))[0]
+                print(
+                    f"Converting {len(root_paths)} ROOT workspace file(s) to "
+                    f"{backend_name} format in '{output_dir}' ..."
+                )
+                converted_shapes = workspace_converter(
+                    root_paths=root_paths,
+                    card_path=input_card,
+                    output_dir=output_dir,
+                    output_prefix=output_prefix,
+                )
+                # Use the path returned by the converter as the shapes file.
+                shapes_file = converted_shapes
+                print(f"Workspace conversion complete: {shapes_file}")
+            else:
+                print(
+                    "No ROOT shape workspace files found in card; "
+                    "skipping workspace conversion."
+                )
+
         output_text = convert_combine_to_backend(
             parsed=parsed,
             shapes_file=shapes_file,
             backend_name=backend_name,
             backend_shape_ext=backend_shape_ext,
-            map_process_names=not args.no_process_name_mapping,
-            workspace_name_mapping=workspace_name_mapping,
         )
     else:
         root_file = args.root_file or default_root_file_from_backend(parsed, backend_shape_ext)

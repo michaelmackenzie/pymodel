@@ -77,6 +77,19 @@ def add_shared_analysis_arguments(
         help="Adaptively refine the CLs scan range and granularity around the limit",
     )
     parser.add_argument(
+        "--cls-toys",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Number of toys per scan point for toy-based CLs evaluation. "
+            "When N>0, p_sb and p_b are estimated by generating N toys at each POI "
+            "value and counting how many give a test statistic at least as extreme "
+            "as observed, instead of using the asymptotic Phi(sqrt(q_mu)) formula. "
+            "Slower but more accurate for small samples (default: 0 = asymptotic)."
+        ),
+    )
+    parser.add_argument(
         "--limit-poi-min",
         type=float,
         default=0.0,
