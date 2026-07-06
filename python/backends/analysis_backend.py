@@ -182,3 +182,15 @@ class AnalysisBackend(ABC):
     @abstractmethod
     def poi_is_signal_strength(self) -> bool:
         """True when the POI is a signal-strength modifier (mu), False otherwise."""
+
+    @property
+    def delta_nll_one_sigma(self) -> float:
+        """Value of delta-NLL corresponding to the 1-sigma (68% CL) boundary.
+
+        For backends that store NLL = -log L this is 0.5.
+        For backends that store twice_nll = -2 log L this is 1.0.
+        Used by ``estimate_poi_unc_from_profile`` to find the correct crossing.
+
+        Subclasses should override when they store twice_nll in FitResult.nll.
+        """
+        return 0.5

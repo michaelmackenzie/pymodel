@@ -1080,7 +1080,11 @@ Returns
 NLLScanResult or None"""
     ... # [Logic Trimming]
 def estimate_poi_unc_from_profile(backend, state: Any, poi_best: float, poi_bounds: Optional[Tuple[float, float]], poi_is_signal_strength: bool=True, signal_nominal_yield: Optional[float]=None, n_points: int=41):
-    """Estimate POI sigma from the delta-NLL = 0.5 profile crossing.
+    """Estimate POI sigma from the delta-NLL profile crossing at the 1-sigma level.
+
+The crossing threshold is taken from ``backend.delta_nll_one_sigma``:
+0.5 for backends storing NLL = -log L (zmodel), or 1.0 for backends
+storing twice_nll = -2 log L (hfmodel/pyhf).
 
 Returns None when the crossing cannot be located."""
     ... # [Logic Trimming]
@@ -1309,6 +1313,15 @@ Returns None when the Hessian is unavailable or numerically unreliable."""
         ... # [Logic Trimming]
     def poi_is_signal_strength(self):
         """True when the POI is a signal-strength modifier (mu), False otherwise."""
+        ... # [Logic Trimming]
+    def delta_nll_one_sigma(self):
+        """Value of delta-NLL corresponding to the 1-sigma (68% CL) boundary.
+
+For backends that store NLL = -log L this is 0.5.
+For backends that store twice_nll = -2 log L this is 1.0.
+Used by ``estimate_poi_unc_from_profile`` to find the correct crossing.
+
+Subclasses should override when they store twice_nll in FitResult.nll."""
         ... # [Logic Trimming]
 
 ### FILE: python/backends/base.py
@@ -1766,6 +1779,8 @@ class PyhfAnalysisBackend:
     def signal_nominal_yield(self):
         ... # [Logic Trimming]
     def poi_is_signal_strength(self):
+        ... # [Logic Trimming]
+    def delta_nll_one_sigma(self):
         ... # [Logic Trimming]
     def from_state(cls, state: PyhfAnalysisState):
         ... # [Logic Trimming]

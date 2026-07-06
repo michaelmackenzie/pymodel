@@ -28,7 +28,16 @@ class FitResult:
     """Hessian (symmetric) uncertainty on the POI, or None if unavailable."""
 
     nll: float
-    """Value of the (profile) negative log-likelihood at the best-fit point."""
+    """Value of the negative log-likelihood (or a monotone proxy) at the best fit.
+
+    The scale convention is backend-specific:
+    - zmodel (zfit): stores NLL = -log L
+    - hfmodel (pyhf): stores twice_nll = -2 log L (returned by pyhf.infer.mle)
+
+    Consumers of this field must treat it as an opaque value for *relative*
+    comparisons within a single backend (e.g. delta-NLL for Feldman-Cousins),
+    not as an absolute NLL suitable for cross-backend comparison.
+    """
 
     param_values: Dict[str, float] = field(default_factory=dict)
     """All floating parameter values keyed by parameter name."""

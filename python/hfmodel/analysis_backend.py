@@ -349,6 +349,12 @@ class PyhfAnalysisBackend(AnalysisBackend):
     def poi_is_signal_strength(self) -> bool:
         return True  # Overridden in _PyhfAdapterWithState
 
+    @property
+    def delta_nll_one_sigma(self) -> float:
+        # pyhf stores twice_nll = -2 log L in FitResult.nll, so the 1-sigma
+        # delta-NLL crossing is at 1.0 (not 0.5 as for true NLL backends).
+        return 1.0
+
     # ------------------------------------------------------------------
     # Factory
     # ------------------------------------------------------------------

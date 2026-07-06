@@ -606,7 +606,11 @@ def estimate_poi_unc_from_profile(
     signal_nominal_yield: Optional[float] = None,
     n_points: int = 41,
 ) -> Optional[float]:
-    """Estimate POI sigma from the delta-NLL = 0.5 profile crossing.
+    """Estimate POI sigma from the delta-NLL profile crossing at the 1-sigma level.
+
+    The crossing threshold is taken from ``backend.delta_nll_one_sigma``:
+    0.5 for backends storing NLL = -log L (zmodel), or 1.0 for backends
+    storing twice_nll = -2 log L (hfmodel/pyhf).
 
     Returns None when the crossing cannot be located.
     """
@@ -634,7 +638,7 @@ def estimate_poi_unc_from_profile(
     if x.size < 5:
         return None
 
-    target = 0.5
+    target = getattr(backend, "delta_nll_one_sigma", 0.5)
 
     # A completely flat profile means the POI is unconstrained
     if np.nanmax(y) < target:
@@ -730,7 +734,9 @@ def compute_feldman_cousins(
     if not np.isfinite(grid_max) or grid_max <= 0.0:
         raise ValueError("Feldman-Cousins scan_max must be finite and > 0")
 
-    poi_grid = np.linspace(0.0, grid_max, n_scan)
+    # linspace includes the endpoint; nudge grid_max slightly inward so that
+    # backends do not fail when it equals a hard parameter boundary.
+    poi_grid = np.linspace(0.0, grid_max * (1.0 - 1e-9), n_scan)
     poi_name_str = backend.poi_name(state)
 
     starting_snapshot = backend.snapshot_parameters(state)
@@ -1282,6 +1288,12 @@ def _apply_cls_to_summary(
             _, model_high = poi_bounds
             if np.isfinite(float(model_high)):
                 scan_upper = min(scan_upper, float(model_high))
+    # Keep scan strictly inside the parameter bounds so that backends (e.g.
+    # zfit) do not raise an error when the scan endpoint equals the bound.
+    if poi_bounds is not None:
+        _, model_high = poi_bounds
+        if np.isfinite(float(model_high)) and scan_upper >= float(model_high):
+            scan_upper = 0.99 * float(model_high)
 
     snapshot_before_cls = backend.snapshot_parameters(state)
 
