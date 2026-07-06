@@ -621,9 +621,17 @@ def plot_nll_scan(summary, plot_dir):
 ### FILE: python/zmodel/convert_datacard_format.py
 ========================================
 import dill
+from typing import List
 from backends.path_bootstrap import ensure_repo_root_on_path
 from backends.datacard_convert_common import build_backend_converter_functions, run_converter_cli
 def _load_workspace_payload_dill(shape_path: str):
+    ... # [Logic Trimming]
+def _convert_workspace_zmodel(root_paths: List[str], card_path: str, output_dir: str, output_prefix: str):
+    """Convert ROOT workspace(s) to a zfit pickle file for zmodel.
+
+Uses the first ROOT file (``convert_root_file`` merges all workspaces
+inside a single file into one ``.pkl`` payload).  Returns the path to
+the written ``.pkl`` file."""
     ... # [Logic Trimming]
 def main():
     ... # [Logic Trimming]
@@ -763,6 +771,32 @@ def detect_card_flavor(card_path: str, backend_shape_ext: str, backend_name: str
     ... # [Logic Trimming]
 def default_shapes_file_from_combine(parsed: ParsedCard, backend_shape_ext: str):
     ... # [Logic Trimming]
+def resolve_shape_file(rel_path: str, card_dir: str):
+    """Resolve a shape file path, trying both card-relative and CWD-relative lookups.
+
+For absolute paths the path is returned as-is.  For relative paths the
+resolution order is:
+
+1. Relative to *card_dir* (the directory containing the datacard) — this
+   is the Combine convention for files stored alongside the card.
+2. Relative to the current working directory — useful when the user runs
+   the converter from the workspace directory rather than the card directory.
+
+The first candidate that exists on disk is returned.  When neither exists
+the card-relative path is returned so that callers can surface a clear
+"file not found" error with the expected location."""
+    ... # [Logic Trimming]
+def collect_root_shape_files(parsed: ParsedCard, card_dir: str):
+    """Return the unique .root workspace files referenced by non-data_obs shapes lines.
+
+Paths are resolved via :func:`resolve_shape_file`, which tries the card
+directory first and falls back to CWD.  The order matches the first
+occurrence of each unique resolved path so callers can use the first entry
+as the primary workspace file.
+
+Returns an empty list when the card has no ``shapes`` lines that point
+to ``.root`` files (i.e. counting experiments)."""
+    ... # [Logic Trimming]
 def clean_workspace_expr(expr: str):
     ... # [Logic Trimming]
 def render_process_expr(expr: str, process: str, channel: str):
@@ -781,6 +815,13 @@ def channel_list(bin_names: List[str]):
     ... # [Logic Trimming]
 def observation_values(parsed: ParsedCard, channels: List[str]):
     ... # [Logic Trimming]
+def is_counting_experiment(parsed: ParsedCard):
+    """Return True when the card has no shape workspace references.
+
+A card is a pure counting experiment when its ``shapes`` list is empty
+or contains only ``data_obs`` entries — i.e. all yields are given
+directly by the ``rate`` row and no workspace PDF is needed."""
+    ... # [Logic Trimming]
 def convert_combine_to_backend(parsed: ParsedCard, shapes_file: Optional[str], backend_name: str, backend_shape_ext: str, map_process_names: bool=True, workspace_name_mapping: Optional[Dict[str, str]]=None):
     ... # [Logic Trimming]
 def convert_backend_to_combine(parsed: ParsedCard, backend_name: str, root_file: str, workspace_name: str, pdf_template: str, syst_template: str):
@@ -789,7 +830,36 @@ def default_root_file_from_backend(parsed: ParsedCard, backend_shape_ext: str):
     ... # [Logic Trimming]
 def build_converter_parser(backend_name: str, backend_shape_ext: str):
     ... # [Logic Trimming]
-def run_converter_cli(backend_name: str, backend_shape_ext: str, payload_loader: Callable[[str], object]):
+def run_converter_cli(backend_name: str, backend_shape_ext: str, payload_loader: Callable[[str], object], workspace_converter: Optional[Callable]=None):
+    """Run the datacard conversion CLI.
+
+Parameters
+----------
+backend_name:
+    Short name of the backend (e.g. ``"hfmodel"``).
+backend_shape_ext:
+    File extension used by the backend's shape workspace (e.g. ``".json"``).
+payload_loader:
+    Callable that loads a backend workspace file and returns a payload
+    object (used to extract ``workspace_name_mapping`` for reverse
+    conversion).
+workspace_converter:
+    Optional callable invoked during ``combine-to-{backend_name}``
+    conversion when the Combine card references one or more ``.root``
+    shape workspace files.  Signature::
+
+        workspace_converter(
+            root_paths: List[str],
+            card_path: str,
+            output_dir: str,
+            output_prefix: str,
+        ) -> str
+
+    It must return the path to the converted backend workspace file.
+    When *None* (or ``--skip-workspace-conversion`` is given), workspace
+    conversion is skipped and the ``shapes_file`` used in the output card
+    is derived from the first ``.root`` file with the backend extension
+    substituted — the same behaviour as before this feature was added."""
     ... # [Logic Trimming]
 def build_backend_converter_functions(backend_name: str, backend_shape_ext: str):
     ... # [Logic Trimming]
@@ -1790,9 +1860,17 @@ def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_pl
 ### FILE: python/hfmodel/convert_datacard_format.py
 ========================================
 import json
+from typing import List
 from backends.path_bootstrap import ensure_repo_root_on_path
 from backends.datacard_convert_common import build_backend_converter_functions, run_converter_cli
 def _load_workspace_payload_json(shape_path: str):
+    ... # [Logic Trimming]
+def _convert_workspace_hfmodel(root_paths: List[str], card_path: str, output_dir: str, output_prefix: str):
+    """Convert ROOT workspace(s) to a pyhf JSON file for hfmodel.
+
+Uses the first ROOT file as the primary input (multi-workspace files are
+handled internally by ``convert_root_workspaces_to_pyhf``).  Returns the
+path to the written ``.json`` file."""
     ... # [Logic Trimming]
 def main():
     ... # [Logic Trimming]
@@ -1923,7 +2001,39 @@ def _delta_nll_scan_payload(model, fit_data, poi_var, n_points=31, full_range=Fa
     ... # [Logic Trimming]
 def _interp_first_crossing(x_vals, y_vals, threshold):
     ... # [Logic Trimming]
-def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0):
+def _compute_asimov_sigma(workspace, model, inner_model, fit_model, obs_var, fit_mode, binned_bins):
+    """Fit the mu=0 Asimov dataset and return the POI uncertainty sigma_A.
+
+This gives the sensitivity measure used in the full asymptotic CLs formula
+(Cowan et al. 2011): q_mu_A = (mu / sigma_A)^2.
+
+Returns sigma_A (float > 0) or None on failure."""
+    ... # [Logic Trimming]
+def _apply_cls_summary_from_scan(summary, alpha, poi_min_limit=0.0, sigma_asimov=None):
+    ... # [Logic Trimming]
+def _q_mu_observed(summary):
+    """Return the observed test statistic q_mu_obs = 2*DeltaNLL at each scan point.
+
+Returns (x, q_obs) arrays, or (None, None) if the scan is unavailable."""
+    ... # [Logic Trimming]
+def _compute_q_mu_for_dataset(workspace, model, inner_model, data, fit_model, poi_var, mu_test, fit_mode, binned_bins, obs_var):
+    """Fit *data* with POI free and POI fixed at *mu_test*; return q_mu = max(0, 2*DNLL).
+
+Returns float or NaN on failure."""
+    ... # [Logic Trimming]
+def _apply_cls_summary_from_toys(summary, alpha, workspace, model, inner_model, fit_model, n_toys_per_point, obs_data, fit_mode, binned_bins, obs_var, poi_min_limit=0.0, seed=1234):
+    """Compute CLs via explicit toy generation at each scan point.
+
+For each POI grid point mu_test:
+  1. Compute q_mu_obs on the actual (observed/toy) dataset.
+  2. Generate n_toys_per_point toys under H1 (mu=0, b-only) and under
+     H_test (mu=mu_test, s+b) and fit each to get a distribution of q_mu.
+  3. p_sb = fraction of s+b toys with q >= q_obs
+     p_b  = fraction of b-only toys with q >= q_obs
+     CLs  = p_sb / p_b  (with p_b clamped away from 0)
+
+The grid is taken from the existing delta_nll_scan so scan range and
+number of points are consistent with the asymptotic path."""
     ... # [Logic Trimming]
 def _apply_feldman_cousins_summary_from_scan(summary, alpha, scan_points, n_toys, poi_min_limit=0.0):
     """Apply Feldman-Cousins confidence interval using the likelihood-ratio method.
@@ -1980,6 +2090,33 @@ tuple of (dict, dict)
     ... # [Logic Trimming]
 def _run_single_fit(workspace, model, data, fit_model, fit_mode, binned_bins, input_obs_var=None, collect_plot_details=False, limit_scan_points=None, limit_scan_full_range=False, limit_scan_poi_min=None, inner_model=None):
     ... # [Logic Trimming]
+def _build_asimov_for_counting(workspace, poi_var=None, poi_val=None):
+    """Build an Asimov dataset for a counting experiment.
+
+For counting models the observables are ``count_obs_<channel>``
+``RooRealVar`` variables.  The Asimov dataset sets each channel's observed
+count to the **continuous expected yield** (``yield_total__<channel>``)
+evaluated at the requested parameter point — no Poisson smearing is
+applied.
+
+Parameters
+----------
+workspace:
+    The RooWorkspace containing the model.
+poi_var:
+    Optional ``RooRealVar`` for the signal-strength POI.  When provided
+    together with *poi_val*, the POI is temporarily set to *poi_val*
+    before evaluating yields and restored afterwards.  This allows the
+    caller to request a background-only (``poi_val=0``) or signal-plus-
+    background Asimov without modifying the workspace persistently.
+poi_val:
+    Float value to assign to *poi_var* during yield evaluation.  Ignored
+    when *poi_var* is ``None``.
+
+Returns a single-entry ``RooDataSet`` with all count observables set to
+their expected (continuous) values, or ``None`` if no ``count_obs_*``
+variables exist in the workspace."""
+    ... # [Logic Trimming]
 def _generate_dataset(workspace, model, dataset_hint, obs_var, fit_mode, binned_bins):
     ... # [Logic Trimming]
 def _build_toy_for_simultaneous(workspace, model, fit_mode):
@@ -2001,6 +2138,60 @@ def _apply_parameter_overrides(workspace, args):
 def _enforce_physical_poi_bounds(workspace, fit_model):
     ... # [Logic Trimming]
 def run_analysis_cli(args):
+    ... # [Logic Trimming]
+
+### FILE: python/roomodel/convert_rooworkspace_shapes.py
+========================================
+import argparse
+import os
+import sys
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.datacard_convert_common import parse_card, ParsedCard, render_process_expr, resolve_shape_file, workspace_from_expr, choose_shape_line
+class ConversionError:
+def _configure_root_logging():
+    ... # [Logic Trimming]
+def _iter_roo_collection(collection):
+    """Iterate over a RooFit collection (RooArgSet, RooArgList, etc.)."""
+    ... # [Logic Trimming]
+def _collect_workspaces(root_file):
+    """Scan a TFile for all RooWorkspace objects."""
+    ... # [Logic Trimming]
+class ProcessMapping:
+    """Mapping from a Combine template-expanded PDF name to a roomodel process name."""
+class WorkspaceConversionResult:
+def _resolve_combine_mappings(parsed: ParsedCard, card_dir: str):
+    """Parse a Combine card and build the PDF name mapping.
+
+Returns (root_file_path, workspace_name, mappings)."""
+    ... # [Logic Trimming]
+def _clone_pdf_recursive(src_ws, dst_ws, pdf_name: str, new_name: str):
+    """Clone a PDF and all its dependencies from src_ws into dst_ws with a new name.
+
+Uses RooWorkspace.import with RenameVariable to map the PDF name.
+Returns True if the PDF was successfully cloned."""
+    ... # [Logic Trimming]
+def convert_combine_workspace_to_roomodel(combine_card_path: str, output_root: str, output_ws_name: str='workspace'):
+    """Read a Combine datacard and its workspace, produce a roomodel-style workspace.
+
+PDFs are cloned from the source workspace and renamed from the Combine
+template-expanded names (e.g. ``mumem_20_signal_pdf``) to the bare
+process names (e.g. ``signal``).  Datasets (``data_obs``) are cloned
+as-is."""
+    ... # [Logic Trimming]
+def convert_roomodel_workspace_to_combine(roomodel_root: str, output_root: str, channel_prefix: str='', pdf_suffix: str='_pdf', output_ws_name: str='workspace'):
+    """Convert a roomodel-style workspace to a Combine-style workspace.
+
+PDFs named by process (e.g. ``signal``) are cloned and renamed
+to the Combine template form (e.g. ``mumem_20_signal_pdf``)."""
+    ... # [Logic Trimming]
+def inspect_combine_workspace(combine_card_path: str):
+    """Print the contents of a Combine workspace referenced by a datacard."""
+    ... # [Logic Trimming]
+def _build_parser():
+    ... # [Logic Trimming]
+def main():
     ... # [Logic Trimming]
 
 ### FILE: python/roomodel/__init__.py
@@ -2048,6 +2239,36 @@ def _plot_cls_band(summary, plot_dir):
 def _plot_feldman_cousins_construction(summary, plot_dir):
     ... # [Logic Trimming]
 def plot_summary_artifacts(summaries, fit_model, plot_dir, binned_bins, ntoys_plot=1):
+    ... # [Logic Trimming]
+
+### FILE: python/roomodel/convert_datacard_format.py
+========================================
+import os
+from typing import List
+from backends.path_bootstrap import ensure_repo_root_on_path
+from backends.datacard_convert_common import build_backend_converter_functions, run_converter_cli
+def _load_workspace_payload_root(shape_path: str):
+    """Load a ROOT shapes file and return a dict with workspace_name_mapping.
+
+For roomodel, the shapes payload *is* the ROOT file itself.  We only need
+to extract the workspace-name mapping (workspace name -> name prefix used
+when objects were imported).  Since roomodel clones RooFit objects directly
+without prefixing, the mapping is typically trivial (empty prefix), but we
+still build it for completeness so ``convert_combine_to_backend`` can
+resolve process-name remapping."""
+    ... # [Logic Trimming]
+def _convert_workspace_roomodel(root_paths: List[str], card_path: str, output_dir: str, output_prefix: str):
+    """Convert a Combine workspace to roomodel naming conventions.
+
+roomodel's workspace converter reads the Combine card directly to learn
+the PDF name templates, so ``card_path`` is used as the primary input
+rather than the raw ``root_paths``.  The ``root_paths`` argument is
+accepted for interface consistency but not used directly (the card
+already references the ROOT file).
+
+Returns the path to the written ``.root`` output file."""
+    ... # [Logic Trimming]
+def main():
     ... # [Logic Trimming]
 
 ### FILE: python/roomodel/model_io.py
