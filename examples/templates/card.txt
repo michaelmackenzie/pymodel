@@ -1,0 +1,19 @@
+# Two-channel TH1 template model with shape systematics (no autoMCStats).
+imax 2
+jmax 1
+kmax *
+------------------------------------------------------------------------
+shapes * * templates.root $CHANNEL/$PROCESS $CHANNEL/$PROCESS_$SYSTEMATIC
+------------------------------------------------------------------------
+bin          ch1   ch2
+observation  -1    -1
+------------------------------------------------------------------------
+bin          ch1   ch1   ch2   ch2
+process      sig   bkg   sig   bkg
+process      0     1     0     1
+rate         -1    -1    -1    -1
+------------------------------------------------------------------------
+lumi         lnN   1.025 1.025 1.025 1.025
+bkg_norm     lnN   -     1.05  -     1.05
+bkg_shape    shape -     1     -     1
+sig_width    shape 1     -     -     -

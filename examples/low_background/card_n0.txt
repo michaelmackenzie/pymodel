@@ -1,0 +1,16 @@
+# Mu2e-like single-channel search: expected signal 1.0 event at r = 1, background 0.2
+# events, observed n = 0.  With b ~ 0.2 the asymptotic formulae are not valid: use toys.
+imax 1
+jmax 1
+kmax *
+------------------------------------------------------------------------
+bin          sr
+observation  0
+------------------------------------------------------------------------
+bin          sr     sr
+process      sig    bkg
+process      0      1
+rate         1.0    0.2
+------------------------------------------------------------------------
+sig_eff      lnN    1.10   -
+bkg_unc      lnN    -      1.30

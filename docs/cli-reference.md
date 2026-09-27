@@ -1,98 +1,561 @@
-# CLI Reference
+# CLI reference
 
-The unified CLI uses this shape:
+Generated from `--help` for roomodel; the other backends differ only in their
+backend-specific options. Regenerate with `scripts/make_cli_reference.sh`.
 
-```text
-python3 python/pymodel <backend> <command> [options]
+## `build`
+
+```
+usage: pymodel roomodel build [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                              [--bin-integration {center,integral}]
+                              [--set-parameters SET_PARAMETERS]
+                              [--freeze-parameters FREEZE_PARAMETERS]
+                              [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                              [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                              [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                              [--plot] [--plot-dir PLOT_DIR] [--verbose] [--bundle BUNDLE]
+                              input
+
+options:
+  -h, --help            show this help message and exit
+  --bundle BUNDLE       output bundle path (default model.json)
+
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
+
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
 ```
 
-Where:
+## `inspect`
 
-- `<backend>` is `hfmodel`, `zmodel`, or `roomodel`
-- `<command>` is `build`, `load`, or `analyze`
+```
+usage: pymodel roomodel inspect [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                                [--bin-integration {center,integral}]
+                                [--set-parameters SET_PARAMETERS]
+                                [--freeze-parameters FREEZE_PARAMETERS]
+                                [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                                [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                                [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                                [--plot] [--plot-dir PLOT_DIR] [--verbose]
+                                input
 
-## Backend and Command Routing
+options:
+  -h, --help            show this help message and exit
 
-Implemented in:
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
 
-- [python/pymodel_core.py](../python/pymodel_core.py)
-- [python/backends/__init__.py](../python/backends/__init__.py)
-- [python/backends/base.py](../python/backends/base.py)
-
-## Common Commands
-
-## build
-
-Create model bundle from card:
-
-```bash
-python3 python/pymodel hfmodel build <card.txt> [output.json]
-python3 python/pymodel zmodel build <card.txt> [output.pkl]
-python3 python/pymodel roomodel build <card.txt> [output.root]
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
 ```
 
-## load
+## `nll`
 
-Inspect saved model bundle:
+```
+usage: pymodel roomodel nll [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                            [--bin-integration {center,integral}]
+                            [--set-parameters SET_PARAMETERS]
+                            [--freeze-parameters FREEZE_PARAMETERS]
+                            [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                            [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                            [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                            [--plot] [--plot-dir PLOT_DIR] [--verbose] [--at AT] [--toys TOYS]
+                            [--expect-signal EXPECT_SIGNAL] [--toys-frequentist]
+                            [--bypass-frequentist-fit] [--toys-no-systematics]
+                            [--toys-file TOYS_FILE]
+                            input
 
-```bash
-python3 python/pymodel hfmodel load <model.json> [-v|-vv]
-python3 python/pymodel zmodel load <model.pkl> [-v|-vv]
-python3 python/pymodel roomodel load <model.root> [-v|-vv]
+options:
+  -h, --help            show this help message and exit
+  --at AT               name=value,... parameter point (default: nominal)
+
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
+
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
+
+toys (Combine semantics):
+  --toys TOYS, -t TOYS  number of toys (-1: Asimov dataset)
+  --expect-signal EXPECT_SIGNAL
+                        r used to generate toys (default 0)
+  --toys-frequentist    fit nuisances to data and randomise global observables (Combine
+                        --toysFrequentist)
+  --bypass-frequentist-fit
+                        frequentist toys around the pre-fit nuisance values
+  --toys-no-systematics
+                        do not randomise nuisances
+  --toys-file TOYS_FILE
+                        read datasets saved by 'generate' instead of generating
 ```
 
-## analyze
+## `fit`
 
-Run fit/scan/toy workflows:
+```
+usage: pymodel roomodel fit [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                            [--bin-integration {center,integral}]
+                            [--set-parameters SET_PARAMETERS]
+                            [--freeze-parameters FREEZE_PARAMETERS]
+                            [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                            [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                            [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                            [--plot] [--plot-dir PLOT_DIR] [--verbose] [--toys TOYS]
+                            [--expect-signal EXPECT_SIGNAL] [--toys-frequentist]
+                            [--bypass-frequentist-fit] [--toys-no-systematics]
+                            [--toys-file TOYS_FILE] [--minos MINOS] [--fix-r FIX_R]
+                            input
 
-```bash
-python3 python/pymodel hfmodel analyze --model-file model.json --toys 10 --cls 0.05
-python3 python/pymodel zmodel analyze --model-file model.pkl --toys 10 --cls 0.05
-python3 python/pymodel roomodel analyze --model-file model.root --toys 10 --cls 0.05
+options:
+  -h, --help            show this help message and exit
+  --minos MINOS         comma-separated parameters for MINOS errors ('all' for all)
+  --fix-r FIX_R         fit with r fixed to this value
+
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
+
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
+
+toys (Combine semantics):
+  --toys TOYS, -t TOYS  number of toys (-1: Asimov dataset)
+  --expect-signal EXPECT_SIGNAL
+                        r used to generate toys (default 0)
+  --toys-frequentist    fit nuisances to data and randomise global observables (Combine
+                        --toysFrequentist)
+  --bypass-frequentist-fit
+                        frequentist toys around the pre-fit nuisance values
+  --toys-no-systematics
+                        do not randomise nuisances
+  --toys-file TOYS_FILE
+                        read datasets saved by 'generate' instead of generating
 ```
 
-## Shared Analyze Options
+## `scan`
 
-Most shared options are added in [python/backends/common.py](../python/backends/common.py).
+```
+usage: pymodel roomodel scan [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                             [--bin-integration {center,integral}]
+                             [--set-parameters SET_PARAMETERS]
+                             [--freeze-parameters FREEZE_PARAMETERS]
+                             [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                             [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                             [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                             [--plot] [--plot-dir PLOT_DIR] [--verbose] [--param PARAM]
+                             [--points POINTS] [--range RANGE] [--toys TOYS]
+                             [--expect-signal EXPECT_SIGNAL] [--toys-frequentist]
+                             [--bypass-frequentist-fit] [--toys-no-systematics]
+                             [--toys-file TOYS_FILE]
+                             input
 
-Commonly used flags:
+options:
+  -h, --help            show this help message and exit
+  --param PARAM
+  --points POINTS
+  --range RANGE         lo:hi (default: POI range, or the parameter range)
 
-- `--model-file` or `--input-card`
-- `--toys`
-- `--plot`
-- `--output`
-- `--report-file`
-- `--cls`
-- `--cls-scan-points`
-- `--limit-poi-min`
-- `--feldman-cousins`
-- `--checkpoint-freq`
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
 
-`--limit-poi-min` defaults to `0.0`, so CLs and Feldman-Cousins scans are restricted to non-negative POI by default. Use a negative value to allow negative POI limits.
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
 
-## hfmodel-Specific Analyze Flags
+toys (Combine semantics):
+  --toys TOYS, -t TOYS  number of toys (-1: Asimov dataset)
+  --expect-signal EXPECT_SIGNAL
+                        r used to generate toys (default 0)
+  --toys-frequentist    fit nuisances to data and randomise global observables (Combine
+                        --toysFrequentist)
+  --bypass-frequentist-fit
+                        frequentist toys around the pre-fit nuisance values
+  --toys-no-systematics
+                        do not randomise nuisances
+  --toys-file TOYS_FILE
+                        read datasets saved by 'generate' instead of generating
+```
 
-Defined by [python/backends/hfmodel/implementation.py](../python/backends/hfmodel/implementation.py):
+## `limit`
 
-- `--backend {scipy,minuit,jax}`
-- `--hessian-method {auto,manual,minuit,jax}`
+```
+usage: pymodel roomodel limit [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                              [--bin-integration {center,integral}]
+                              [--set-parameters SET_PARAMETERS]
+                              [--freeze-parameters FREEZE_PARAMETERS]
+                              [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                              [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                              [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                              [--plot] [--plot-dir PLOT_DIR] [--verbose]
+                              [--method {asymptotic,toys}] [--cl CL]
+                              [--run {both,observed,expected,blind}] [--grid GRID]
+                              [--toys-per-point TOYS_PER_POINT] [--refine REFINE]
+                              [--bypass-frequentist-fit] [--toys-file TOYS_FILE]
+                              [--toy-index TOY_INDEX]
+                              input
 
-## zmodel-Specific Analyze Flags
+options:
+  -h, --help            show this help message and exit
+  --method {asymptotic,toys}
+  --cl CL
+  --run {both,observed,expected,blind}
+                        blind: expected only, from a pre-fit Asimov dataset
+  --grid GRID           toys: r grid 'lo:hi:n' or list (default: around the asymptotic limit)
+  --toys-per-point TOYS_PER_POINT
+  --refine REFINE       toys: bisection points added around the crossing
+  --bypass-frequentist-fit
+  --toys-file TOYS_FILE
+                        use a saved dataset as the observed data
+  --toy-index TOY_INDEX
 
-Defined by [python/backends/zmodel/implementation.py](../python/backends/zmodel/implementation.py):
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
 
-- `--fit-mode {auto,binned,unbinned}`
-- `--graph-mode {auto,on,off}`
-- `--profile-scan`
-- `--poi-name`
-- `--promote-poi`
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
+```
 
-## roomodel-Specific Analyze Flags
+## `fc`
 
-Defined by [python/backends/roomodel/implementation.py](../python/backends/roomodel/implementation.py):
+```
+usage: pymodel roomodel fc [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                           [--bin-integration {center,integral}] [--set-parameters SET_PARAMETERS]
+                           [--freeze-parameters FREEZE_PARAMETERS]
+                           [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                           [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                           [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT] [--plot]
+                           [--plot-dir PLOT_DIR] [--verbose] [--cl CL] [--grid GRID]
+                           [--toys-per-point TOYS_PER_POINT] [--refine REFINE]
+                           [--bypass-frequentist-fit] [--toys-file TOYS_FILE]
+                           [--toy-index TOY_INDEX]
+                           input
 
-- `--fit-mode {auto,binned,unbinned}`
-- `--set-parameters NAME=VALUE,...`
-- `--freeze-parameters NAME,...`
-- `--set-parameter-ranges NAME=MIN:MAX,...`
-- `--plot` (saves dataset plots and profile-scan artifacts including CLs/FC plots when available)
+options:
+  -h, --help            show this help message and exit
+  --cl CL
+  --grid GRID           r grid 'lo:hi:n' or list (default: from a likelihood scan)
+  --toys-per-point TOYS_PER_POINT
+  --refine REFINE       bisection points added around each edge
+  --bypass-frequentist-fit
+  --toys-file TOYS_FILE
+  --toy-index TOY_INDEX
+
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
+
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
+```
+
+## `significance`
+
+```
+usage: pymodel roomodel significance [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                                     [--bin-integration {center,integral}]
+                                     [--set-parameters SET_PARAMETERS]
+                                     [--freeze-parameters FREEZE_PARAMETERS]
+                                     [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                                     [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                                     [--strategy {0,1,2}] [--tolerance TOLERANCE]
+                                     [--output OUTPUT] [--plot] [--plot-dir PLOT_DIR] [--verbose]
+                                     [--method {asymptotic,toys}]
+                                     [--toys-per-point TOYS_PER_POINT] [--bypass-frequentist-fit]
+                                     [--toys-file TOYS_FILE] [--toy-index TOY_INDEX]
+                                     input
+
+options:
+  -h, --help            show this help message and exit
+  --method {asymptotic,toys}
+  --toys-per-point TOYS_PER_POINT
+  --bypass-frequentist-fit
+  --toys-file TOYS_FILE
+  --toy-index TOY_INDEX
+
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
+
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
+```
+
+## `generate`
+
+```
+usage: pymodel roomodel generate [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                                 [--bin-integration {center,integral}]
+                                 [--set-parameters SET_PARAMETERS]
+                                 [--freeze-parameters FREEZE_PARAMETERS]
+                                 [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                                 [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                                 [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                                 [--plot] [--plot-dir PLOT_DIR] [--verbose] [--toys TOYS]
+                                 [--expect-signal EXPECT_SIGNAL] [--toys-frequentist]
+                                 [--bypass-frequentist-fit] [--toys-no-systematics]
+                                 [--toys-file TOYS_FILE] [--toys-out TOYS_OUT]
+                                 input
+
+options:
+  -h, --help            show this help message and exit
+  --toys-out TOYS_OUT
+
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
+
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
+
+toys (Combine semantics):
+  --toys TOYS, -t TOYS  number of toys (-1: Asimov dataset)
+  --expect-signal EXPECT_SIGNAL
+                        r used to generate toys (default 0)
+  --toys-frequentist    fit nuisances to data and randomise global observables (Combine
+                        --toysFrequentist)
+  --bypass-frequentist-fit
+                        frequentist toys around the pre-fit nuisance values
+  --toys-no-systematics
+                        do not randomise nuisances
+  --toys-file TOYS_FILE
+                        read datasets saved by 'generate' instead of generating
+```
+
+## `export`
+
+```
+usage: pymodel roomodel export [-h] [--mass MASS] [--rmin RMIN] [--rmax RMAX]
+                               [--bin-integration {center,integral}]
+                               [--set-parameters SET_PARAMETERS]
+                               [--freeze-parameters FREEZE_PARAMETERS]
+                               [--freeze-nuisance-groups FREEZE_NUISANCE_GROUPS]
+                               [--set-parameter-ranges SET_PARAMETER_RANGES] [--seed SEED]
+                               [--strategy {0,1,2}] [--tolerance TOLERANCE] [--output OUTPUT]
+                               [--plot] [--plot-dir PLOT_DIR] [--verbose] --native-out NATIVE_OUT
+                               input
+
+options:
+  -h, --help            show this help message and exit
+  --native-out NATIVE_OUT
+
+model:
+  input                 Combine datacard, or a model bundle (.json) written by 'build'
+  --mass MASS           value substituted for $MASS in shapes lines
+  --rmin RMIN           POI lower bound (default 0)
+  --rmax RMAX           POI upper bound (default 20, as in Combine)
+  --bin-integration {center,integral}
+                        how parametric pdfs are evaluated on binned data: bin centre x width
+                        (Combine/RooFit, default) or exact bin integrals
+  --set-parameters SET_PARAMETERS
+                        name=value,... (initial/fixed values)
+  --freeze-parameters FREEZE_PARAMETERS
+                        name,... parameters to fix at their values
+  --freeze-nuisance-groups FREEZE_NUISANCE_GROUPS
+                        group,... datacard groups to freeze
+  --set-parameter-ranges SET_PARAMETER_RANGES
+                        name=lo:hi,...
+
+fit / output:
+  --seed SEED           random seed (default 123456, as in Combine)
+  --strategy {0,1,2}    Minuit strategy
+  --tolerance TOLERANCE
+                        Minuit tolerance (EDM goal 0.002*tol*0.5)
+  --output OUTPUT, -o OUTPUT
+                        result JSON (default pymodel_<command>.json)
+  --plot                write plots for this command
+  --plot-dir PLOT_DIR
+  --verbose, -v
+```

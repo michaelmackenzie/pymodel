@@ -1,56 +1,69 @@
-# roomodel Backend Guide
+# roomodel (RooFit)
 
-`roomodel` is the ROOT RooFit-based implementation.
+Code: `python/stat_backends/roomodel/`:
+- `workspace.py`: IR → RooWorkspace
+- `evaluator.py`: C++ bin and event loop, compiled once through cling
+- `likelihood.py`
+- `export.py`
 
-## Key Modules
+roomodel is the most general backend. It uses the pdfs from the Combine workspaces as they
+are.
 
-- Backend adapter: [python/backends/roomodel/implementation.py](../python/backends/roomodel/implementation.py)
-- Build: [python/roomodel/build_model_from_text.py](../python/roomodel/build_model_from_text.py)
-- Load summary: [python/roomodel/load_model.py](../python/roomodel/load_model.py)
-- Analyze CLI + orchestration: [python/roomodel/analyze_model.py](../python/roomodel/analyze_model.py)
-- Plotting helpers: [python/roomodel/analyze_plotting.py](../python/roomodel/analyze_plotting.py)
-- Model I/O: [python/roomodel/model_io.py](../python/roomodel/model_io.py)
+## Supported model features
+Everything in the IR except `syst:pdf-morph` (shape systematics on RooAbsPdfs):
+- **Data:** counting, binned, unbinned and weighted.
+- **Shapes:** templates (`shape` and `shapeN`), parametric pdfs with floating parameters,
+  `<pdf>_norm` variables and functions, and RooMultiPdf envelopes (`discrete`).
+- **Norm terms:** `lnN` (symmetric and asymmetric), `lnU`, `gmN`, `rateParam` (plain and
+  formula).
+- **Constraints:** every constraint type.
 
-## Typical Workflow
+Workspaces with Combine classes (RooMultiPdf, RooLandauCB, …) need
+`PYMODEL_ROOT_LIBS=libHiggsAnalysisCombinedLimit.so` in the Combine environment.
 
-```bash
-python3 python/pymodel roomodel build examples/roomodel/simple_shapes_card.txt model.root
-python3 python/pymodel roomodel load model.root
-python3 python/pymodel roomodel analyze --model-file model.root --toys 10 --output analysis_output_roomodel.json
-```
+## Implementation
+- **Parameters.** Each IR parameter is one RooRealVar, created before the workspace objects
+  are imported with RecycleConflictNodes, so the imported pdfs use the IR parameters
+  directly. Nodes with the same name but different definitions from different files are
+  refused (Combine would silently share them).
+- **Yields.** `n_exp_<ch>_<proc>` = rate × r × norm terms. lnN is `exp(θ ln κ)`, asymmetric
+  lnN is Combine's `logKappaForX` formula, and gmN is α·n.
+- **Templates.** Per-bin RooFormulaVars implement Combine's smooth-step vertical morph (and
+  the shapeN log morph), with clipping and renormalisation. The Combine library is not needed
+  for this.
+- **Binned parametric pdfs** are evaluated at the bin centre × width (or as bin integrals with
+  `--bin-integration integral`). The extended term uses the full yield, as Combine does.
+- **Envelopes.** The penalty is `RooMultiPdf::getCorrection()`, exactly what Combine's
+  CachingAddNLL adds; RooFit counts the observable as a parameter there. Parameters of the
+  non-selected pdfs are frozen.
+- **Speed.** The NLL is summed in C++ from RooFit evaluations, at about 7–17 µs per call on the
+  mumep_ana cards.
 
-## Common Analyze Flags
+## Export
+`roomodel export INPUT --native-out ws.root` writes a RooWorkspace `w` containing:
+- `model_s`, the main pdf × the constraint pdfs;
+- the `<p>_Pdf` / `<p>_In` constraint pdfs and global observables;
+- `data_obs`;
+- `ModelConfig` and `ModelConfig_bonly`;
+- the IR as JSON.
 
-In addition to shared analyze options:
+## Validation (`tests/backend_roomodel_check.py`)
+**Against the numpy oracle:** ≤ 2e-15 relative.
 
-- `--fit-mode {auto,binned,unbinned}`
-- `--plot`
-- `--set-parameters NAME=VALUE,...`
-- `--freeze-parameters NAME,...`
-- `--set-parameter-ranges NAME=MIN:MAX,...`
+**Against Combine**, as ΔNLL between parameter points on the text2workspace model of the same
+card:
 
-For limit-style scans:
+| card | ΔNLL agreement |
+|---|---|
+| `combine_mumem_75_evt_r0104_hists` | 3e-14 |
+| `combine_mumem_75_evt_r0104_funcs` | 4e-14 |
+| `combine_mumep_40_evt_r0104_env` (both envelope indices) | 4e-11 |
+| `combine_total_mumem_75_evt_r0101` | 3e-14 |
+| TH1 templates | 5e-7, from Combine rounding the template κ to `%f` |
 
-- `--cls ALPHA`
-- `--cls-smart-scan`
-- `--feldman-cousins ALPHA` (`-fc`)
-- `--fc-toys N`
-- `--limit-poi-min X` (defaults to `0.0`)
+**Asymptotic limits (observed / median) against Combine:**
 
-`--limit-poi-min` restricts CLs and Feldman-Cousins scan domains. Keep default `0.0` for physical non-negative signal strength limits, or set a negative value to include signed POI regions.
-
-## Plot Outputs
-
-When `--plot` is enabled, roomodel writes artifacts under `--plot-dir` (default `plots`), including:
-
-- dataset overlays (`dataset_XXXX*.png`)
-- profile scan (`delta_nll_XXXX.png`)
-- CLs curve (`dataset_XXXX_cls_band.png`) when CLs info is available
-- Feldman-Cousins construction (`dataset_XXXX_feldman_cousins.png`) when FC info is available
-
-## Example Inputs
-
-- [examples/roomodel/simple_shapes_card.txt](../examples/roomodel/simple_shapes_card.txt)
-- [examples/roomodel/simple_shapes_two_channel_card.txt](../examples/roomodel/simple_shapes_two_channel_card.txt)
-- [examples/roomodel/counting_example.txt](../examples/roomodel/counting_example.txt)
-- [examples/roomodel/counting_two_channel_example.txt](../examples/roomodel/counting_two_channel_example.txt)
+| card | roomodel | Combine |
+|---|---|---|
+| funcs | 9.136 / 14.44 | 9.142 / 14.44 |
+| env (`--rmax 1000`) | 236.6 / 197.1 | 237.0 / 196.5 |

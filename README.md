@@ -1,214 +1,64 @@
-# pymodel: Unified Statistical Backend Driver
+# pymodel
 
-pymodel is a standalone, unified CLI for statistical workflows using three backends:
+pymodel runs Combine-style statistical analyses (fits, likelihood scans, CLs limits,
+Feldman–Cousins intervals, significances) on **CMS Combine datacards** with one of three
+likelihood backends:
 
-- hfmodel (pyhf-based)
-- zmodel (zfit-based)
-- roomodel (ROOT RooFit-based)
+| backend | engine | typical use |
+|---|---|---|
+| `roomodel` | RooFit | anything a Combine workspace contains: parametric pdfs, `_norm` functions, RooMultiPdf envelopes |
+| `zmodel` | zfit | counting, templates, and parametric pdfs translated from RooFit (explicit class map) |
+| `hfmodel` | pyhf | counting and histogram-template models |
 
-It supports a common build/load/analyze workflow, shared card parsing utilities, and backend-specific model execution.
+All statistics (fitting, toys, test statistics, limits and intervals) are implemented once
+and shared by the backends. They follow Combine's definitions, which are documented in
+[docs/statistics.md](docs/statistics.md). Each backend only evaluates the likelihood, so the
+same card gives the same numbers on every backend that supports it. The tests check this
+against Combine itself.
 
-## What This Repository Provides
+## Setup
+```bash
+source setup_env.sh                 # every new shell
+scripts/install_python_deps.sh      # once: pyhf (not in rootana) into .pydeps/
+```
+Cards that use Combine's own classes (e.g. RooMultiPdf) also need Combine's libraries. See
+[AGENTS.md](AGENTS.md#environment-fresh-shell).
 
-- One top-level CLI that dispatches to either backend.
-- Shared infrastructure for card parsing and common reporting/analysis helpers.
-- Backend-specific implementations for model construction, fitting, and serialization.
-- Conversion tools for:
-	- text card format conversion (Combine <-> backend card)
-	- RooWorkspace shape conversion (ROOT <-> backend payload)
+## Usage
+```bash
+pymodel <backend> <command> INPUT [options]      # or: roomodel <command> ..., hfmodel ..., zmodel ...
+```
+`INPUT` is a Combine datacard, or a model bundle written by `build`.
 
-## Repository Layout
+| command | Combine equivalent | example |
+|---|---|---|
+| `limit` | AsymptoticLimits / HybridNew LHC-limits | `roomodel limit card.txt` · `roomodel limit card.txt --method toys --toys-per-point 1000` |
+| `fc` | HybridNew LHC-feldman-cousins | `roomodel fc card.txt --cl 0.9 --grid 0:4:17` |
+| `fit` | FitDiagnostics / MultiDimFit singles | `roomodel fit card.txt --minos r` · `roomodel fit card.txt -t 500 --expect-signal 1 --toys-frequentist` |
+| `scan` | MultiDimFit --algo grid | `roomodel scan card.txt --param r --points 50 --range 0:5` |
+| `significance` | Significance | `roomodel significance card.txt --method toys` |
+| `generate` | GenerateOnly | `roomodel generate card.txt -t 100 --toys-out toys.json` |
+| `build` / `inspect` / `nll` / `export` | text2workspace | `roomodel build card.txt --bundle model.json` |
 
-- Top-level CLI:
-	- python/pymodel
-	- bin/pymodel
-- Shared backend framework:
-	- python/backends/base.py
-	- python/backends/common.py
-	- python/backends/card_parser.py
-- Backend adapters:
-	- python/backends/hfmodel/implementation.py
-	- python/backends/zmodel/implementation.py
-	- python/backends/roomodel/implementation.py
-- Backend implementations:
-	- python/hfmodel/
-	- python/zmodel/
-	- python/roomodel/
+Common options include:
+- `--rmin/--rmax`
+- `--set-parameters a=1,b=2`, `--freeze-parameters`, `--freeze-nuisance-groups`,
+  `--set-parameter-ranges`
+- `--seed`, `--output result.json`, `--plot`
 
-## Installation
+The toy options follow Combine: `-t N`, `-t -1` (Asimov), `--expect-signal`,
+`--toys-frequentist`, `--bypass-frequentist-fit` and `--toys-no-systematics`.
+See `pymodel <backend> <command> --help`.
 
-Use your own Python environment or the Mu2e environment shown below.
+Every command writes a JSON result (format described in `python/inference/results.py`).
+**Check its `flags` list before using a number.** Unbracketed limits, failed fits,
+parameters at a bound and excluded toys are all reported there, and are also printed at the
+end of the run.
 
-General virtual environment example:
-
-~~~bash
-python -m venv .venv
-source .venv/bin/activate
-pip install pyhf zfit hepstats tensorflow uproot hist dill scipy
-~~~
-
-Mu2e environment used for this repository:
-
-~~~bash
-source /cvmfs/mu2e.opensciencegrid.org/setupmu2e-art.sh
-pyenv rootana 2.5.0
-# Alternatively
-source setup_env.sh
-~~~
-
-## Quick Start
-
-Add the repository command wrapper and Python modules to your environment:
-
-~~~bash
-export PYMODEL_REPO=$PWD
-export PATH="$PATH:$PYMODEL_REPO/bin"
-export PYTHONPATH="$PYTHONPATH:$PYMODEL_REPO"
-# Done by setup_env.sh
-~~~
-
-Use the unified CLI:
-
-~~~bash
-pymodel --help
-pymodel hfmodel --help
-pymodel zmodel --help
-pymodel roomodel --help
-
-# Aliases to specific backends
-hfmodel --help
-zmodel --help
-roomodel --help
-~~~
-
-Example cards and helper scripts are in `examples/hfmodel`, `examples/zmodel`, and `examples/roomodel`.
-
-Build a model from a text card:
-
-~~~bash
-pymodel hfmodel build examples/hfmodel/simple_shapes_card.txt
-pymodel zmodel build examples/zmodel/simple_shapes_card.txt
-pymodel roomodel build examples/roomodel/simple_shapes_card.txt
-~~~
-
-Load and summarize a saved model:
-
-~~~bash
-pymodel hfmodel load model.json
-pymodel zmodel load model.pkl
-pymodel roomodel load model.root
-~~~
-
-Run analysis [default option]:
-
-~~~bash
-pymodel hfmodel analyze --model-file model.json
-pymodel zmodel analyze --model-file model.pkl
-pymodel roomodel analyze --model-file model.root
-~~~
-
-## Backend Output Formats
-
-- hfmodel:
-	- model bundle default: model.json
-	- analysis snapshot default: analysis_output.json
-- zmodel:
-	- model bundle default: model.pkl
-	- analysis snapshot default: analysis_output.pkl
-- roomodel:
-	- model bundle default: model.root
-	- analysis snapshot default: analysis_output_roomodel.json
-
-Both backends also produce an ensemble evaluation report JSON (derived from output path by default, overridable with --report-file).
-
-## Common Analyze Options
-
-Shared options include:
-
-- --toys N
-- --plot
-- --cls ALPHA
-- --cls-scan-points N
-- --feldman-cousins ALPHA
-- --limit-poi-min X
-- --checkpoint-freq N
-- --output
-- --set-parameters NAME=VALUE,...
-- --freeze-parameters NAME,...
-- --set-parameter-ranges NAME=MIN:MAX,...
-- --plot (includes per-dataset plots, delta-NLL, CLs band, and Feldman-Cousins construction when requested)
-
-Backend-specific examples:
-
-- hfmodel:
-	- --backend {scipy,minuit,jax}
-	- --hessian-method {auto,manual,minuit,jax}
-- zmodel:
-	- --fit-mode {auto,binned,unbinned}
-	- --graph-mode {auto,on,off}
-	- --profile-scan
-	- --poi-name
-- roomodel:
-	- --fit-mode {auto,binned,unbinned}
-
-## Plotting Existing Snapshots
-
-Plot helper scripts are backend-specific wrappers:
-
-~~~bash
-python3 python/hfmodel/plot_analysis.py analysis_output.json --plot-dir plots_hf
-python3 python/zmodel/plot_analysis.py analysis_output.pkl --plot-dir plots_z
-pymodel roomodel analyze --model-file model.root --plot --ntoys-plot 1 --output analysis_output_roomodel.json
-~~~
-
-## Card Format Conversion
-
-Convert between Combine cards and backend cards:
-
-~~~bash
-# Combine -> hfmodel
-python3 python/hfmodel/convert_datacard_format.py input_combine.txt output_hfmodel.txt --shapes-file shapes/workspace.json
-
-# hfmodel -> Combine
-python3 python/hfmodel/convert_datacard_format.py input_hfmodel.txt output_combine.txt --direction hfmodel-to-combine --root-file workspace.root
-
-# Combine -> zmodel
-python3 python/zmodel/convert_datacard_format.py input_combine.txt output_zmodel.txt --shapes-file shapes/workspace.pkl
-
-# zmodel -> Combine
-python3 python/zmodel/convert_datacard_format.py input_zmodel.txt output_combine.txt --direction zmodel-to-combine --root-file workspace.root
-~~~
-
-## RooWorkspace Shape Conversion
-
-Convert ROOT workspaces into backend shape payloads:
-
-~~~bash
-python3 python/hfmodel/convert_rooworkspace_shapes.py input.root --output-dir shapes --bins 60
-python3 python/zmodel/convert_rooworkspace_shapes.py input.root --output-dir shapes
-~~~
-
-Convert saved backend outputs back to ROOT workspaces:
-
-~~~bash
-python3 python/hfmodel/convert_rooworkspace_shapes.py model.json --output-root workspace.root --workspace-name workspace
-python3 python/zmodel/convert_rooworkspace_shapes.py analysis_output.pkl --output-root workspace.root
-~~~
-
-## Regression Tests
-
-Run CLI surface regression checks:
-
-~~~bash
-python3 tests/regression_cli_surface.py
-~~~
-
-Run example smoke regressions:
-
-~~~bash
-python3 tests/regression_examples_smoke.py
-~~~
-
-## Notes
-
-- Relative paths in cards are recommended for portability.
+## Documentation
+- [docs/statistics.md](docs/statistics.md): what is computed, with the matching Combine code
+- [docs/architecture.md](docs/architecture.md): code map and design rules
+- [docs/cards-and-conversion.md](docs/cards-and-conversion.md): supported datacard features per backend
+- [docs/testing-and-regression.md](docs/testing-and-regression.md): validation suite and Combine fixtures
+- [examples/](examples/): runnable datacards
+- [AGENTS.md](AGENTS.md): rules for AI agents and contributors

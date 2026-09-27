@@ -1,0 +1,18 @@
+# Discrete profiling: the background is a RooMultiPdf (exponential / power law /
+# Bernstein) whose index pdfindex is profiled (`discrete`).  Needs Combine's library.
+imax 1
+jmax 1
+kmax *
+------------------------------------------------------------------------
+shapes * * workspace.root w:$PROCESS
+------------------------------------------------------------------------
+bin          sr
+observation  -1
+------------------------------------------------------------------------
+bin          sr    sr
+process      sig   bkg
+process      0     1
+rate         25    1
+------------------------------------------------------------------------
+lumi         lnN   1.025 -
+pdfindex     discrete

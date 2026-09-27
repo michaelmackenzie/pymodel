@@ -1,50 +1,49 @@
-# Cards and Conversion Workflows
+# Datacards and model conversion
 
-This guide covers card parsing and format conversion between Combine-style cards and backend cards.
+pymodel reads **Combine datacards**, and nothing else. The card is parsed by Combine's own
+`DatacardParser` (vendored in `python/third_party/combine`), so the syntax, wildcard
+expansion, `nuisance edit` and `group` lines behave exactly as in Combine. Shape files are
+looked up the way Combine does it: first relative to the working directory, then relative
+to the card's directory. `$PROCESS`, `$CHANNEL`, `$SYSTEMATIC` and `$MASS` (`--mass`) are
+substituted. Shapes are resolved with Combine's precedence: (channel, process) >
+(channel, `*`) > (`*`, process) > (`*`, `*`).
 
-## Shared Parsing and Conversion Code
+The card and its shape inputs become a `ModelIR` (`python/modelspec/`). There is no
+card-to-card conversion step: every backend builds its likelihood directly from the IR.
+`build` saves the IR as a self-contained bundle (`model.json`, plus `model_objects.root`
+when RooFit objects are referenced). `export` writes a backend's native model: a pyhf
+workspace JSON, or a RooWorkspace with a ModelConfig.
 
-- Shared card dataclasses/parser: [python/backends/card_parser.py](../python/backends/card_parser.py)
-- Shared conversion logic: [python/backends/datacard_convert_common.py](../python/backends/datacard_convert_common.py)
+## Support matrix
 
-## Build from Card
+✓ supported · — refused with an error (never dropped silently)
 
-Both backends consume cards parsed into `CardSpec` through the shared parser:
+| datacard content | IR feature | roomodel | zmodel | hfmodel |
+|---|---|---|---|---|
+| counting channels (`shapes * * FAKE` or no shapes) | `shape:counting` | ✓ | ✓ | ✓ |
+| TH1 / RooDataHist templates | `shape:template` | ✓ | ✓ | ✓ |
+| RooAbsPdf, fixed parameters | `shape:parametric(-histogram)` | ✓ | ✓ | ✓ |
+| RooAbsPdf, floating parameters | `shape:parametric` | ✓ | ✓ (class map) | — |
+| RooMultiPdf + `discrete` | `shape:envelope`, `discrete` | ✓ | — | — |
+| unbinned (RooDataSet) data, weighted or not | `data:unbinned`, `data:weighted` | ✓ | ✓ | — |
+| `<pdf>_norm` RooRealVar | `norm:rate_param` | ✓ | ✓ | ✓ |
+| `<pdf>_norm` function | `norm:ws_norm` | ✓ | ✓ (formula/product) | — |
+| `lnN κ` | `norm:lnN` | ✓ | ✓ | ✓ |
+| `lnN κd/κu` | `norm:asym_lnN` | ✓ | ✓ | ✓ (pyhf interpolation) |
+| `lnU` | `norm:lnU` | ✓ | ✓ | — |
+| `gmN N α` | `norm:gmN` | ✓ | ✓ | ✓ (one process only) |
+| `rateParam` value / `[range]` | `norm:rate_param` | ✓ | ✓ | ✓ |
+| `rateParam` formula | `norm:formula` | ✓ | ✓ | — |
+| `shape` (histograms) | `syst:shape` | ✓ | ✓ | ✓ (pyhf interpolation) |
+| `shapeN` | `syst:shapeN` | ✓ | — | — |
+| `shape` on RooAbsPdfs (pdf morphing) | `syst:pdf-morph` | — | — | — |
+| `param m σ` / `m -σl/+σh` / `[range]` | `constraint:gauss` / `bifurgauss` | ✓ | ✓ | centre 0, σ 1 only |
+| `flatParam`, `extArg` (value) | free / constant parameter | ✓ | ✓ | ✓ |
+| `group`, `nuisance edit` (incl. `freeze`) | handled by the parser | ✓ | ✓ | ✓ |
+| `autoMCStats` | — | — | — | — |
+| multi-dimensional data_obs | — | — | — | — |
 
-- hfmodel build path: [python/hfmodel/build_model_from_text.py](../python/hfmodel/build_model_from_text.py)
-- zmodel build path: [python/zmodel/build_model_from_text.py](../python/zmodel/build_model_from_text.py)
-
-## Combine -> Backend Card
-
-```bash
-python3 python/hfmodel/convert_datacard_format.py input_combine.txt output_hfmodel.txt --shapes-file shapes/workspace.json
-python3 python/zmodel/convert_datacard_format.py input_combine.txt output_zmodel.txt --shapes-file shapes/workspace.pkl
-```
-
-## Backend Card -> Combine
-
-```bash
-python3 python/hfmodel/convert_datacard_format.py input_hfmodel.txt output_combine.txt --direction hfmodel-to-combine --root-file workspace.root
-python3 python/zmodel/convert_datacard_format.py input_zmodel.txt output_combine.txt --direction zmodel-to-combine --root-file workspace.root
-```
-
-## RooWorkspace Shape Conversion
-
-Generate backend shapes from ROOT workspaces:
-
-```bash
-python3 python/hfmodel/convert_rooworkspace_shapes.py input.root --output-dir shapes --bins 60
-python3 python/zmodel/convert_rooworkspace_shapes.py input.root --output-dir shapes
-```
-
-Convert backend outputs back into ROOT workspaces:
-
-```bash
-python3 python/hfmodel/convert_rooworkspace_shapes.py model.json --output-root workspace.root --workspace-name workspace
-python3 python/zmodel/convert_rooworkspace_shapes.py analysis_output.pkl --output-root workspace.root
-```
-
-## Example Cards
-
-- hfmodel cards: [examples/hfmodel](../examples/hfmodel)
-- zmodel cards: [examples/zmodel](../examples/zmodel)
+`pymodel <backend> inspect card.txt` shows how a card was interpreted: channels, per-process
+expected yields, parameters with their roles and constraints, and notes. Notes point out
+suspicious inputs, for example a `param` that affects no process, or an observation line that
+disagrees with data_obs.

@@ -1,0 +1,378 @@
+{
+ "fixture": "mumep_40_env",
+ "card": "/exp/mu2e/app/users/mmackenz/mumep/mumep_ana/analysis/combine/datacards/combine_mumep_40_evt_r0104_env.txt",
+ "combine": {
+  "executable": "/exp/mu2e/app/users/mmackenz/mumep/combine/HiggsAnalysis/CombinedLimit/build/bin/combine",
+  "source": "/exp/mu2e/app/users/mmackenz/mumep/combine/HiggsAnalysis/CombinedLimit",
+  "commit": "137dbced2ab8901869d02c0b7773139d28cf8bfd",
+  "describe": "137dbced",
+  "branch": "mu2e_dev",
+  "root": "6.32.02"
+ },
+ "generated": "2026-09-27T16:01:34.261896",
+ "seed": 20260927,
+ "extra_options": [
+  "--cminDefaultMinimizerStrategy",
+  "0",
+  "--X-rtd",
+  "MINIMIZER_freezeDisassociatedParams",
+  "--cminRunAllDiscreteCombinations"
+ ],
+ "asymptotic": {
+  "observed": 236.39504757237162,
+  "expected": {
+   "0.025": 103.623046875,
+   "0.16": 139.90310668945312,
+   "0.5": 196.5,
+   "0.84": 280.30853271484375,
+   "0.975": 383.1569519042969
+  }
+ },
+ "r_range": [
+  0.0,
+  575.0
+ ],
+ "multidimfit_grid": {
+  "n_points": 50,
+  "best_fit": 52.75450134277344,
+  "points": [
+   [
+    5.75,
+    0.23781247437000275
+   ],
+   [
+    17.25,
+    0.1357804238796234
+   ],
+   [
+    28.75,
+    0.062268227338790894
+   ],
+   [
+    40.25,
+    0.017116770148277283
+   ],
+   [
+    51.75,
+    0.0001778847654350102
+   ],
+   [
+    63.25,
+    0.011075552552938461
+   ],
+   [
+    74.75,
+    0.049677710980176926
+   ],
+   [
+    86.25,
+    0.11567191779613495
+   ],
+   [
+    97.75,
+    0.2087298482656479
+   ],
+   [
+    109.25,
+    0.3283537030220032
+   ],
+   [
+    120.75,
+    0.47429952025413513
+   ],
+   [
+    132.25,
+    0.6460895538330078
+   ],
+   [
+    143.75,
+    0.8432747721672058
+   ],
+   [
+    155.25,
+    1.065379023551941
+   ],
+   [
+    166.75,
+    1.3118878602981567
+   ],
+   [
+    178.25,
+    1.5823423862457275
+   ],
+   [
+    189.75,
+    1.8762054443359375
+   ],
+   [
+    201.25,
+    2.192945957183838
+   ],
+   [
+    212.75,
+    2.5320191383361816
+   ],
+   [
+    224.25,
+    2.892909288406372
+   ],
+   [
+    235.75,
+    3.2750442028045654
+   ],
+   [
+    247.25,
+    3.6776936054229736
+   ],
+   [
+    258.75,
+    4.100579261779785
+   ],
+   [
+    270.25,
+    4.543032169342041
+   ],
+   [
+    281.75,
+    5.004499912261963
+   ],
+   [
+    293.25,
+    5.484431266784668
+   ],
+   [
+    304.75,
+    5.982306003570557
+   ],
+   [
+    316.25,
+    6.497511386871338
+   ],
+   [
+    327.75,
+    7.029607772827148
+   ],
+   [
+    339.25,
+    7.5779876708984375
+   ],
+   [
+    350.75,
+    8.142189979553223
+   ],
+   [
+    362.25,
+    8.721660614013672
+   ],
+   [
+    373.75,
+    9.316040992736816
+   ],
+   [
+    385.25,
+    9.924610137939453
+   ],
+   [
+    396.75,
+    10.547231674194336
+   ],
+   [
+    408.25,
+    11.182991981506348
+   ],
+   [
+    419.75,
+    11.83177375793457
+   ],
+   [
+    431.25,
+    12.493109703063965
+   ],
+   [
+    442.75,
+    13.166635513305664
+   ],
+   [
+    454.25,
+    13.85173511505127
+   ],
+   [
+    465.75,
+    14.548039436340332
+   ],
+   [
+    477.25,
+    15.255135536193848
+   ],
+   [
+    488.75,
+    15.972742080688477
+   ],
+   [
+    500.25,
+    16.700319290161133
+   ],
+   [
+    511.75,
+    17.437625885009766
+   ],
+   [
+    523.25,
+    18.184289932250977
+   ],
+   [
+    534.75,
+    18.9400634765625
+   ],
+   [
+    546.25,
+    19.704368591308594
+   ],
+   [
+    557.75,
+    20.477174758911133
+   ],
+   [
+    569.25,
+    21.257965087890625
+   ]
+  ]
+ },
+ "multidimfit_singles": {
+  "best_fit": 52.75450134277344,
+  "lower": 0.0,
+  "upper": 152.0480499267578,
+  "rows": [
+   [
+    52.75450134277344,
+    -1.0
+   ],
+   [
+    0.0,
+    -0.3199999928474426
+   ],
+   [
+    152.0480499267578,
+    0.3199999928474426
+   ]
+  ]
+ },
+ "fitdiagnostics": {
+  "fit_s": {
+   "status": 0,
+   "covQual": 3,
+   "minNll": -3.2555442515649254e-06,
+   "params": {
+    "lumi": {
+     "value": -0.00037152393968675475,
+     "error": 0.9999869089830141,
+     "error_lo": -0.9999869089830141,
+     "error_hi": 0.9999869089830141
+    },
+    "mumep_40_env_gaus_poly_order_-1_g_0": {
+     "value": 81.93731491026102,
+     "error": 0.0,
+     "error_lo": -0.0,
+     "error_hi": 0.0
+    },
+    "mumep_40_env_gaus_poly_order_-1_g_1": {
+     "value": 5.108740000798814,
+     "error": 0.0,
+     "error_lo": -0.0,
+     "error_hi": 0.0
+    },
+    "mumep_40_env_gaus_poly_order_0_g_0": {
+     "value": 52.69452741702507,
+     "error": 8.17828191749328,
+     "error_lo": -8.17828191749328,
+     "error_hi": 8.17828191749328
+    },
+    "mumep_40_env_gaus_poly_order_0_g_1": {
+     "value": 11.81405583346953,
+     "error": 1.3634043363513637,
+     "error_lo": -1.3634043363513637,
+     "error_hi": 1.3634043363513637
+    },
+    "mumep_40_env_gaus_poly_order_0_p_0_p": {
+     "value": -0.0007422957485468268,
+     "error": 0.0007835021929110363,
+     "error_lo": -0.0007835021929110363,
+     "error_hi": 0.0007835021929110363
+    },
+    "r": {
+     "value": 52.865219260025356,
+     "error": 91.91483872882235,
+     "error_lo": -52.882540049699124,
+     "error_hi": 99.14562426598353
+    },
+    "shapeBkg_env_obs_40__norm": {
+     "value": 7978.310107861113,
+     "error": 104.60419374413368,
+     "error_lo": -104.60419374413368,
+     "error_hi": 104.60419374413368
+    }
+   }
+  },
+  "fit_b": {
+   "status": 0,
+   "covQual": 3,
+   "minNll": -6.499775366819449e-07,
+   "params": {
+    "lumi": {
+     "value": 0.0,
+     "error": 1.0,
+     "error_lo": -1.0,
+     "error_hi": 1.0
+    },
+    "mumep_40_env_gaus_poly_order_-1_g_0": {
+     "value": 81.93731491026102,
+     "error": 0.0,
+     "error_lo": -0.0,
+     "error_hi": 0.0
+    },
+    "mumep_40_env_gaus_poly_order_-1_g_1": {
+     "value": 5.108740000798814,
+     "error": 0.0,
+     "error_lo": -0.0,
+     "error_hi": 0.0
+    },
+    "mumep_40_env_gaus_poly_order_0_g_0": {
+     "value": 52.74572362149921,
+     "error": 9.022316456454082,
+     "error_lo": -9.022316456454082,
+     "error_hi": 9.022316456454082
+    },
+    "mumep_40_env_gaus_poly_order_0_g_1": {
+     "value": 11.865285333021712,
+     "error": 1.5218843723922646,
+     "error_lo": -1.5218843723922646,
+     "error_hi": 1.5218843723922646
+    },
+    "mumep_40_env_gaus_poly_order_0_p_0_p": {
+     "value": -0.0008111440594497916,
+     "error": 0.0009067448600085218,
+     "error_lo": -0.0009067448600085218,
+     "error_hi": 0.0009067448600085218
+    },
+    "shapeBkg_env_obs_40__norm": {
+     "value": 8008.017777685621,
+     "error": 89.48543311324374,
+     "error_lo": -89.48543311324374,
+     "error_hi": 89.48543311324374
+    }
+   }
+  }
+ },
+ "significance": {
+  "Z": 0.547277063153012
+ },
+ "commands": {
+  "text2workspace": "text2workspace.py datacards/combine_mumep_40_evt_r0104_env.txt -m 120 -o ws.root",
+  "asymptotic": "combine -M AsymptoticLimits ws.root -m 120 -n .mumep_40_env --seed 20260927 --cminDefaultMinimizerStrategy 0 --X-rtd MINIMIZER_freezeDisassociatedParams --cminRunAllDiscreteCombinations",
+  "multidimfit_grid": "combine -M MultiDimFit ws.root -m 120 -n .mumep_40_env.grid --algo grid --points 50 -P r --floatOtherPOIs 1 --seed 20260927 --setParameterRanges r=0,575 --cminDefaultMinimizerStrategy 0 --X-rtd MINIMIZER_freezeDisassociatedParams --cminRunAllDiscreteCombinations",
+  "multidimfit_singles": "combine -M MultiDimFit ws.root -m 120 -n .mumep_40_env.singles --algo singles --seed 20260927 --setParameterRanges r=0,575 --cminDefaultMinimizerStrategy 0 --X-rtd MINIMIZER_freezeDisassociatedParams --cminRunAllDiscreteCombinations",
+  "fitdiagnostics": "combine -M FitDiagnostics ws.root -m 120 -n .mumep_40_env --seed 20260927 --forceRecreateNLL --setParameterRanges r=0,575 --cminDefaultMinimizerStrategy 0 --X-rtd MINIMIZER_freezeDisassociatedParams --cminRunAllDiscreteCombinations",
+  "significance": "combine -M Significance ws.root -m 120 -n .mumep_40_env --seed 20260927 --cminDefaultMinimizerStrategy 0 --X-rtd MINIMIZER_freezeDisassociatedParams --cminRunAllDiscreteCombinations"
+ },
+ "cpu_seconds_wall": 18.6
+}

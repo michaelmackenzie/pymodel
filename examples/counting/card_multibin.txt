@@ -1,0 +1,16 @@
+# Three-bin counting experiment (multi-bin bin/observation pairing).
+imax 3
+jmax 1
+kmax *
+------------------------------------------------------------------------
+bin          b1   b2   b3
+observation  12   28   65
+------------------------------------------------------------------------
+bin          b1    b1    b2    b2    b3    b3
+process      sig   bkg   sig   bkg   sig   bkg
+process      0     1     0     1     0     1
+rate         4     10    6     30    2     60
+------------------------------------------------------------------------
+lumi         lnN   1.025 1.025 1.025 1.025 1.025 1.025
+bkg_norm     lnN   -     1.10  -     1.10  -     1.10
+bkg_b3       lnN   -     -     -     -     -     0.97/1.05

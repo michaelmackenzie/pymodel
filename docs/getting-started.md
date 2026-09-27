@@ -1,87 +1,45 @@
-# Getting Started
-
-This guide shows the shortest path from environment setup to a working build/load/analyze cycle for all backends.
-
-## 1. Environment
-
-Mu2e environment used by this repository:
+# Getting started
 
 ```bash
-source /cvmfs/mu2e.opensciencegrid.org/setupmu2e-art.sh
-pyenv rootana 2.5.0
+cd /path/to/pymodel
+source setup_env.sh                 # rootana 2.5.0, pymodel on PATH/PYTHONPATH
+scripts/install_python_deps.sh      # once: pyhf for hfmodel
 ```
 
-## 2. Basic CLI Checks
-
-From the repository root:
-
+## A counting experiment
 ```bash
-python3 python/pymodel --help
-python3 python/pymodel hfmodel --help
-python3 python/pymodel zmodel --help
-python3 python/pymodel roomodel --help
+roomodel inspect examples/counting/card.txt       # how the card was interpreted
+roomodel limit   examples/counting/card.txt       # asymptotic CLs (AsymptoticLimits)
+roomodel fit     examples/counting/card.txt --minos r
+roomodel scan    examples/counting/card.txt --points 40 --range 0:4 --plot
 ```
+Every command writes `pymodel_<command>.json` (use `-o` to choose the name). It prints
+**FLAGS** if anything makes the result suspect.
 
-Relevant source:
-
-- [python/pymodel](../python/pymodel)
-- [python/pymodel_core.py](../python/pymodel_core.py)
-
-## 3. hfmodel Quickstart
-
-Build, load, and analyze:
-
+## Shapes
 ```bash
-python3 python/pymodel hfmodel build examples/hfmodel/simple_shapes_card.txt
-python3 python/pymodel hfmodel load model.json
-python3 python/pymodel hfmodel analyze --model-file model.json --toys 1 --output analysis_output.json
+cd examples/parametric_unbinned && python3 make_inputs.py && cd -
+roomodel limit examples/parametric_unbinned/card.txt
+zmodel   limit examples/parametric_unbinned/card.txt       # same model, zfit likelihood
+roomodel fit   examples/parametric_unbinned/card.txt -t 200 --expect-signal 1 --toys-frequentist --plot
 ```
 
-Examples and generators:
-
-- [examples/hfmodel/simple_shapes_card.txt](../examples/hfmodel/simple_shapes_card.txt)
-- [examples/hfmodel/simple_shapes.py](../examples/hfmodel/simple_shapes.py)
-
-## 4. zmodel Quickstart
-
-Build, load, and analyze:
-
+## Low backgrounds: use toys
+Asymptotic formulas fail for b ≲ 1. Use toy CLs or Feldman–Cousins instead:
 ```bash
-python3 python/pymodel zmodel build examples/zmodel/simple_shapes_card.txt
-python3 python/pymodel zmodel load model.pkl
-python3 python/pymodel zmodel analyze --model-file model.pkl --toys 1 --output analysis_output.pkl
+roomodel limit examples/low_background/card_n0.txt --method toys --toys-per-point 2000
+roomodel fc    examples/low_background/card_n0.txt --cl 0.9 --grid 0:5:11 --toys-per-point 1000
 ```
+For comparison, Combine gives 2.11 asymptotic and 2.93 with toys for `card_n0`.
 
-Examples and generators:
-
-- [examples/zmodel/simple_shapes_card.txt](../examples/zmodel/simple_shapes_card.txt)
-- [examples/zmodel/simple_shapes.py](../examples/zmodel/simple_shapes.py)
-
-## 5. Plot Existing Analysis Snapshots
-
+## Your own Combine cards
+Run from the directory that the card's shape paths are relative to, exactly as for Combine:
 ```bash
-python3 python/hfmodel/plot_analysis.py analysis_output.json --plot-dir plots_hf
-python3 python/zmodel/plot_analysis.py analysis_output.pkl --plot-dir plots_z
-python3 python/pymodel roomodel analyze --model-file model.root --plot --ntoys-plot 1 --output analysis_output_roomodel.json
+cd mumep_ana/analysis/combine
+roomodel limit datacards/combine_mumem_75_evt_r0104_hists.txt
 ```
+Cards that use Combine classes (RooMultiPdf, RooLandauCB, …) need Combine's environment and
+`export PYMODEL_ROOT_LIBS=libHiggsAnalysisCombinedLimit.so`.
 
-Source:
-
-- [python/hfmodel/plot_analysis.py](../python/hfmodel/plot_analysis.py)
-- [python/zmodel/plot_analysis.py](../python/zmodel/plot_analysis.py)
-
-## 6. roomodel Quickstart
-
-Build, load, and analyze:
-
-```bash
-python3 python/pymodel roomodel build examples/roomodel/simple_shapes_card.txt
-python3 python/pymodel roomodel load model.root
-python3 python/pymodel roomodel analyze --model-file model.root --toys 1 --output analysis_output_roomodel.json
-```
-
-Examples and generators:
-
-- [examples/roomodel/simple_shapes_card.txt](../examples/roomodel/simple_shapes_card.txt)
-- [examples/roomodel/simple_shapes.py](../examples/roomodel/simple_shapes.py)
-- [examples/roomodel/simple_shapes_two_channel_card.txt](../examples/roomodel/simple_shapes_two_channel_card.txt)
+To reuse a model across many runs, save it once as a self-contained bundle:
+`roomodel build card.txt --bundle model.json`, then `hfmodel limit model.json`.

@@ -27,3 +27,7 @@
 *.tree
 *.pkl
 *.json
+# pure-python deps installed by scripts/install_python_deps.sh
+.pydeps/
+# Combine reference fixtures are part of the test suite
+!tests/fixtures/*.json

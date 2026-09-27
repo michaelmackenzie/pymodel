@@ -1,0 +1,610 @@
+{
+ "fixture": "low_background_n1",
+ "card": "examples/low_background/card_n1.txt",
+ "combine": {
+  "executable": "/exp/mu2e/app/users/mmackenz/mumep/combine/HiggsAnalysis/CombinedLimit/build/bin/combine",
+  "source": "/exp/mu2e/app/users/mmackenz/mumep/combine/HiggsAnalysis/CombinedLimit",
+  "commit": "137dbced2ab8901869d02c0b7773139d28cf8bfd",
+  "describe": "137dbced",
+  "branch": "mu2e_dev",
+  "root": "6.32.02"
+ },
+ "generated": "2026-09-27T15:17:33.621816",
+ "seed": 20260927,
+ "extra_options": [],
+ "asymptotic": {
+  "observed": 3.784791856894049,
+  "expected": {
+   "0.025": 0.92193603515625,
+   "0.16": 1.4468178749084473,
+   "0.5": 2.484375,
+   "0.84": 4.445134162902832,
+   "0.975": 7.530328750610352
+  }
+ },
+ "r_range": [
+  0.0,
+  8.0
+ ],
+ "multidimfit_grid": {
+  "n_points": 50,
+  "best_fit": 0.8003007769584656,
+  "points": [
+   [
+    0.07999999821186066,
+    1.087365984916687
+   ],
+   [
+    0.23999999463558197,
+    0.5166627764701843
+   ],
+   [
+    0.4000000059604645,
+    0.21979020535945892
+   ],
+   [
+    0.5600000023841858,
+    0.06831836700439453
+   ],
+   [
+    0.7200000286102295,
+    0.006706817541271448
+   ],
+   [
+    0.8799999952316284,
+    0.006024273112416267
+   ],
+   [
+    1.0399999618530273,
+    0.049310363829135895
+   ],
+   [
+    1.2000000476837158,
+    0.1257769763469696
+   ],
+   [
+    1.3600000143051147,
+    0.22813917696475983
+   ],
+   [
+    1.5199999809265137,
+    0.3512474000453949
+   ],
+   [
+    1.6799999475479126,
+    0.4913276135921478
+   ],
+   [
+    1.840000033378601,
+    0.6455317735671997
+   ],
+   [
+    2.0,
+    0.8116579055786133
+   ],
+   [
+    2.1600000858306885,
+    0.9879687428474426
+   ],
+   [
+    2.319999933242798,
+    1.1730694770812988
+   ],
+   [
+    2.4800000190734863,
+    1.3658233880996704
+   ],
+   [
+    2.640000104904175,
+    1.5652923583984375
+   ],
+   [
+    2.799999952316284,
+    1.7706924676895142
+   ],
+   [
+    2.9600000381469727,
+    1.9813628196716309
+   ],
+   [
+    3.119999885559082,
+    2.1967406272888184
+   ],
+   [
+    3.2799999713897705,
+    2.4163424968719482
+   ],
+   [
+    3.440000057220459,
+    2.639751434326172
+   ],
+   [
+    3.5999999046325684,
+    2.8666036128997803
+   ],
+   [
+    3.759999990463257,
+    3.096580743789673
+   ],
+   [
+    3.9200000762939453,
+    3.3294029235839844
+   ],
+   [
+    4.079999923706055,
+    3.564822196960449
+   ],
+   [
+    4.239999771118164,
+    3.8026180267333984
+   ],
+   [
+    4.400000095367432,
+    4.042593479156494
+   ],
+   [
+    4.559999942779541,
+    4.284572124481201
+   ],
+   [
+    4.71999979019165,
+    4.528395652770996
+   ],
+   [
+    4.880000114440918,
+    4.773920059204102
+   ],
+   [
+    5.039999961853027,
+    5.021015644073486
+   ],
+   [
+    5.199999809265137,
+    5.269564628601074
+   ],
+   [
+    5.360000133514404,
+    5.519458770751953
+   ],
+   [
+    5.519999980926514,
+    5.77060079574585
+   ],
+   [
+    5.679999828338623,
+    6.022899627685547
+   ],
+   [
+    5.840000152587891,
+    6.276273727416992
+   ],
+   [
+    6.0,
+    6.530646324157715
+   ],
+   [
+    6.159999847412109,
+    6.785947799682617
+   ],
+   [
+    6.320000171661377,
+    7.042112827301025
+   ],
+   [
+    6.480000019073486,
+    7.299082279205322
+   ],
+   [
+    6.639999866485596,
+    7.55679988861084
+   ],
+   [
+    6.800000190734863,
+    7.815214157104492
+   ],
+   [
+    6.960000038146973,
+    8.0742769241333
+   ],
+   [
+    7.119999885559082,
+    8.333943367004395
+   ],
+   [
+    7.28000020980835,
+    8.594172477722168
+   ],
+   [
+    7.440000057220459,
+    8.854925155639648
+   ],
+   [
+    7.599999904632568,
+    9.116164207458496
+   ],
+   [
+    7.760000228881836,
+    9.37785530090332
+   ],
+   [
+    7.920000076293945,
+    9.63996696472168
+   ]
+  ]
+ },
+ "multidimfit_singles": {
+  "best_fit": 0.8003007769584656,
+  "lower": 0.10078317672014236,
+  "upper": 2.160876989364624,
+  "rows": [
+   [
+    0.8003007769584656,
+    -1.0
+   ],
+   [
+    0.10078317672014236,
+    -0.3199999928474426
+   ],
+   [
+    2.160876989364624,
+    0.3199999928474426
+   ]
+  ]
+ },
+ "fitdiagnostics": {
+  "fit_s": {
+   "status": 0,
+   "covQual": 3,
+   "minNll": -0.017678231753402617,
+   "params": {
+    "bkg_unc": {
+     "value": -0.0001947335368347545,
+     "error": 0.9944558644094573,
+     "error_lo": -0.9944558644094573,
+     "error_hi": 0.9944558644094573
+    },
+    "r": {
+     "value": 0.8003007767867703,
+     "error": 0.9703569596246151,
+     "error_lo": -0.6992541238709268,
+     "error_hi": 1.3608395826653465
+    },
+    "sig_eff": {
+     "value": -0.000569132561994987,
+     "error": 0.9944587664887083,
+     "error_lo": -0.9944587664887083,
+     "error_hi": 0.9944587664887083
+    }
+   }
+  },
+  "fit_b": {
+   "status": 0,
+   "covQual": 3,
+   "minNll": -0.021722655859579658,
+   "params": {
+    "bkg_unc": {
+     "value": 0.2070410761337812,
+     "error": 0.9873082530202633,
+     "error_lo": -0.9873082530202633,
+     "error_hi": 0.9873082530202633
+    },
+    "sig_eff": {
+     "value": 0.0,
+     "error": 0.9944578911702985,
+     "error_lo": -0.9944578911702985,
+     "error_hi": 0.9944578911702985
+    }
+   }
+  }
+ },
+ "significance": {
+  "Z": 1.255160896319283
+ },
+ "hybrid_cls": {
+  "mode": "LHC-limits",
+  "toys": 1000,
+  "cl": 0.95,
+  "points": [
+   {
+    "r": 2.0,
+    "CLs": 0.2582781456953642,
+    "CLs_err": 0.015009620684202212,
+    "CLb": 0.906,
+    "CLb_err": 0.009228434320078352,
+    "CLsplusb": 0.234,
+    "CLsplusb_err": 0.013388203763014663,
+    "test_stat_obs": 0.40572872265882376,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 3.0,
+    "CLs": 0.11184210526315788,
+    "CLs_err": 0.010551407795568658,
+    "CLb": 0.912,
+    "CLb_err": 0.008958571314668425,
+    "CLsplusb": 0.102,
+    "CLsplusb_err": 0.009570579919733183,
+    "test_stat_obs": 1.0172835431903087,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 3.5,
+    "CLs": 0.06512141280353201,
+    "CLs_err": 0.008250886934613394,
+    "CLb": 0.906,
+    "CLb_err": 0.009228434320078352,
+    "CLsplusb": 0.059,
+    "CLsplusb_err": 0.007451107300260815,
+    "test_stat_obs": 1.3620905859326857,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 4.0,
+    "CLs": 0.04713804713804714,
+    "CLs_err": 0.0071382410716123446,
+    "CLb": 0.891,
+    "CLb_err": 0.009854897259738425,
+    "CLsplusb": 0.042,
+    "CLsplusb_err": 0.0063431853196954605,
+    "test_stat_obs": 1.7233013702733324,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 4.5,
+    "CLs": 0.03066812705366922,
+    "CLs_err": 0.005721852000258552,
+    "CLb": 0.913,
+    "CLb_err": 0.008912407082264592,
+    "CLsplusb": 0.028,
+    "CLsplusb_err": 0.005216895628628197,
+    "test_stat_obs": 2.0967031268143965,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 5.0,
+    "CLs": 0.014573991031390133,
+    "CLs_err": 0.004018938975939857,
+    "CLb": 0.892,
+    "CLb_err": 0.009815090422405696,
+    "CLsplusb": 0.013,
+    "CLsplusb_err": 0.0035820385257559696,
+    "test_stat_obs": 2.479448706076249,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 5.5,
+    "CLs": 0.014672686230248306,
+    "CLs_err": 0.004046357237759404,
+    "CLb": 0.886,
+    "CLb_err": 0.010050074626588601,
+    "CLsplusb": 0.013,
+    "CLsplusb_err": 0.0035820385257559696,
+    "test_stat_obs": 2.8694714696815806,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 6.5,
+    "CLs": 0.006787330316742082,
+    "CLs_err": 0.002763684627713333,
+    "CLb": 0.884,
+    "CLb_err": 0.010126401137620412,
+    "CLsplusb": 0.006,
+    "CLsplusb_err": 0.0024421302176583456,
+    "test_stat_obs": 3.6655288787250435,
+    "n_null_dist": 1000,
+    "n_alt_dist": 1000
+   }
+  ],
+  "grid_limit": {
+   "observed": 3.8504827376753257,
+   "observed_err": 0.07364361148318208,
+   "expected": {
+    "0.16": 2.2340085600161124,
+    "0.5": 2.670221688176317,
+    "0.84": 3.269109164865896
+   }
+  }
+ },
+ "hybrid_fc": {
+  "mode": "LHC-feldman-cousins",
+  "toys": 1000,
+  "cl": 0.9,
+  "points": [
+   {
+    "r": 0.02,
+    "CLs": -1.0,
+    "CLs_err": -1.0,
+    "CLb": 0.0,
+    "CLb_err": 0.0,
+    "CLsplusb": 0.094,
+    "CLsplusb_err": 0.009228434320078353,
+    "test_stat_obs": 0.7168454388079057,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 0.05,
+    "CLs": 0.6599999999999999,
+    "CLs_err": 0.425904214583514,
+    "CLb": 0.18181818181818182,
+    "CLb_err": 0.11629129983033297,
+    "CLsplusb": 0.12,
+    "CLsplusb_err": 0.010276186062932104,
+    "test_stat_obs": 0.6237255670093789,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 0.1,
+    "CLs": 1.518,
+    "CLs_err": 1.4523201010796485,
+    "CLb": 0.09090909090909091,
+    "CLb_err": 0.08667841720414476,
+    "CLsplusb": 0.138,
+    "CLsplusb_err": 0.01090669519148674,
+    "test_stat_obs": 0.4961338888575404,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 0.2,
+    "CLs": 1.067,
+    "CLs_err": 0.6859121744071904,
+    "CLb": 0.18181818181818182,
+    "CLb_err": 0.11629129983033297,
+    "CLsplusb": 0.194,
+    "CLsplusb_err": 0.012504559168559283,
+    "test_stat_obs": 0.3126681121010404,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 0.5,
+    "CLs": 0.8932000000000001,
+    "CLs_err": 0.0862409285664295,
+    "CLb": 0.9090909090909091,
+    "CLb_err": 0.08667841720414472,
+    "CLsplusb": 0.812,
+    "CLsplusb_err": 0.01235540367612487,
+    "test_stat_obs": 0.056115106583815674,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 1.0,
+    "CLs": 0.787,
+    "CLs_err": 0.012947239087929132,
+    "CLb": 1.0,
+    "CLb_err": 0.0,
+    "CLsplusb": 0.787,
+    "CLsplusb_err": 0.012947239087929132,
+    "test_stat_obs": 0.017415166329796995,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 2.0,
+    "CLs": 0.43999999999999995,
+    "CLs_err": 0.06523257536606145,
+    "CLb": 0.8181818181818182,
+    "CLb_err": 0.11629129983033294,
+    "CLsplusb": 0.36,
+    "CLsplusb_err": 0.015178932768808221,
+    "test_stat_obs": 0.40572915175457824,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 3.0,
+    "CLs": 0.2101,
+    "CLs_err": 0.024254051001842965,
+    "CLb": 0.9090909090909091,
+    "CLb_err": 0.08667841720414472,
+    "CLsplusb": 0.191,
+    "CLsplusb_err": 0.012430567163247218,
+    "test_stat_obs": 1.0172903928562045,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 3.5,
+    "CLs": 0.11,
+    "CLs_err": 0.009894442884771228,
+    "CLb": 1.0,
+    "CLb_err": 0.0,
+    "CLsplusb": 0.11,
+    "CLsplusb_err": 0.009894442884771228,
+    "test_stat_obs": 1.362097816807846,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 4.0,
+    "CLs": 0.088,
+    "CLs_err": 0.019423079055597748,
+    "CLb": 0.7272727272727273,
+    "CLb_err": 0.13428162652290843,
+    "CLsplusb": 0.064,
+    "CLsplusb_err": 0.007739767438366608,
+    "test_stat_obs": 1.7232924733319441,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 4.5,
+    "CLs": 0.051,
+    "CLs_err": 0.00695693898205238,
+    "CLb": 1.0,
+    "CLb_err": 0.0,
+    "CLsplusb": 0.051,
+    "CLsplusb_err": 0.00695693898205238,
+    "test_stat_obs": 2.096684192322479,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   },
+   {
+    "r": 5.0,
+    "CLs": 0.031,
+    "CLs_err": 0.0054807846153630225,
+    "CLb": 1.0,
+    "CLb_err": 0.0,
+    "CLsplusb": 0.031,
+    "CLsplusb_err": 0.0054807846153630225,
+    "test_stat_obs": 2.4794150968968123,
+    "n_null_dist": 11,
+    "n_alt_dist": 1000
+   }
+  ],
+  "note": "grid_interval is Combine's --readHybridResults readout; its --lowerLimit readout is not meaningful when the interval starts at r = 0 (it returns the upper crossing). The per-point p-values (CLsplusb) are the reference.",
+  "grid_interval": {
+   "lower": 0.026923104432912976,
+   "lower_err": 0.03994262390028413,
+   "upper": 0.026923104432912976,
+   "upper_err": 0.03994262390028413
+  }
+ },
+ "commands": {
+  "text2workspace": "text2workspace.py card_n1.txt -m 120 -o ws.root",
+  "asymptotic": "combine -M AsymptoticLimits ws.root -m 120 -n .low_background_n1 --seed 20260927",
+  "multidimfit_grid": "combine -M MultiDimFit ws.root -m 120 -n .low_background_n1.grid --algo grid --points 50 -P r --floatOtherPOIs 1 --seed 20260927 --setParameterRanges r=0,8",
+  "multidimfit_singles": "combine -M MultiDimFit ws.root -m 120 -n .low_background_n1.singles --algo singles --seed 20260927 --setParameterRanges r=0,8",
+  "fitdiagnostics": "combine -M FitDiagnostics ws.root -m 120 -n .low_background_n1 --seed 20260927 --forceRecreateNLL --setParameterRanges r=0,8",
+  "significance": "combine -M Significance ws.root -m 120 -n .low_background_n1 --seed 20260927",
+  "hybrid_cls_r2": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 2 --seed 20260927 -n .low_background_n1.cls.r2",
+  "hybrid_cls_r3": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 3 --seed 20260928 -n .low_background_n1.cls.r3",
+  "hybrid_cls_r3.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 3.5 --seed 20260929 -n .low_background_n1.cls.r3.5",
+  "hybrid_cls_r4": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 4 --seed 20260930 -n .low_background_n1.cls.r4",
+  "hybrid_cls_r4.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 4.5 --seed 20260931 -n .low_background_n1.cls.r4.5",
+  "hybrid_cls_r5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 5 --seed 20260932 -n .low_background_n1.cls.r5",
+  "hybrid_cls_r5.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 5.5 --seed 20260933 -n .low_background_n1.cls.r5.5",
+  "hybrid_cls_r6.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits -T 1000 --clsAcc 0 --saveHybridResult --fullBToys --singlePoint 6.5 --seed 20260934 -n .low_background_n1.cls.r6.5",
+  "hybrid_cls_hadd": "hadd -f merged_cls.root higgsCombine.low_background_n1.cls.r2.HybridNew.mH120.20260927.root higgsCombine.low_background_n1.cls.r3.5.HybridNew.mH120.20260929.root higgsCombine.low_background_n1.cls.r3.HybridNew.mH120.20260928.root higgsCombine.low_background_n1.cls.r4.5.HybridNew.mH120.20260931.root higgsCombine.low_background_n1.cls.r4.HybridNew.mH120.20260930.root higgsCombine.low_background_n1.cls.r5.5.HybridNew.mH120.20260933.root higgsCombine.low_background_n1.cls.r5.HybridNew.mH120.20260932.root higgsCombine.low_background_n1.cls.r6.5.HybridNew.mH120.20260934.root",
+  "hybrid_cls_grid_observed": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits --readHybridResults --grid merged_cls.root --cl 0.95 -n .low_background_n1.clsgrid",
+  "hybrid_cls_grid_expected_0.16": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits --readHybridResults --grid merged_cls.root --cl 0.95 --expectedFromGrid 0.16 -n .low_background_n1.clsgrid.exp0.16",
+  "hybrid_cls_grid_expected_0.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits --readHybridResults --grid merged_cls.root --cl 0.95 --expectedFromGrid 0.5 -n .low_background_n1.clsgrid.exp0.5",
+  "hybrid_cls_grid_expected_0.84": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-limits --readHybridResults --grid merged_cls.root --cl 0.95 --expectedFromGrid 0.84 -n .low_background_n1.clsgrid.exp0.84",
+  "hybrid_fc_r0.02": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 0.02 --seed 20260927 -n .low_background_n1.fc.r0.02",
+  "hybrid_fc_r0.05": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 0.05 --seed 20260928 -n .low_background_n1.fc.r0.05",
+  "hybrid_fc_r0.1": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 0.1 --seed 20260929 -n .low_background_n1.fc.r0.1",
+  "hybrid_fc_r0.2": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 0.2 --seed 20260930 -n .low_background_n1.fc.r0.2",
+  "hybrid_fc_r0.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 0.5 --seed 20260931 -n .low_background_n1.fc.r0.5",
+  "hybrid_fc_r1": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 1 --seed 20260932 -n .low_background_n1.fc.r1",
+  "hybrid_fc_r2": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 2 --seed 20260933 -n .low_background_n1.fc.r2",
+  "hybrid_fc_r3": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 3 --seed 20260934 -n .low_background_n1.fc.r3",
+  "hybrid_fc_r3.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 3.5 --seed 20260935 -n .low_background_n1.fc.r3.5",
+  "hybrid_fc_r4": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 4 --seed 20260936 -n .low_background_n1.fc.r4",
+  "hybrid_fc_r4.5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 4.5 --seed 20260937 -n .low_background_n1.fc.r4.5",
+  "hybrid_fc_r5": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins -T 1000 --clsAcc 0 --saveHybridResult --singlePoint 5 --seed 20260938 -n .low_background_n1.fc.r5",
+  "hybrid_fc_hadd": "hadd -f merged_fc.root higgsCombine.low_background_n1.fc.r0.02.HybridNew.mH120.20260927.root higgsCombine.low_background_n1.fc.r0.05.HybridNew.mH120.20260928.root higgsCombine.low_background_n1.fc.r0.1.HybridNew.mH120.20260929.root higgsCombine.low_background_n1.fc.r0.2.HybridNew.mH120.20260930.root higgsCombine.low_background_n1.fc.r0.5.HybridNew.mH120.20260931.root higgsCombine.low_background_n1.fc.r1.HybridNew.mH120.20260932.root higgsCombine.low_background_n1.fc.r2.HybridNew.mH120.20260933.root higgsCombine.low_background_n1.fc.r3.5.HybridNew.mH120.20260935.root higgsCombine.low_background_n1.fc.r3.HybridNew.mH120.20260934.root higgsCombine.low_background_n1.fc.r4.5.HybridNew.mH120.20260937.root higgsCombine.low_background_n1.fc.r4.HybridNew.mH120.20260936.root higgsCombine.low_background_n1.fc.r5.HybridNew.mH120.20260938.root",
+  "hybrid_fc_grid_upper": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins --readHybridResults --grid merged_fc.root --cl 0.9 -n .low_background_n1.fcgrid.up",
+  "hybrid_fc_grid_lower": "combine -M HybridNew ws.root -m 120 --LHCmode LHC-feldman-cousins --readHybridResults --grid merged_fc.root --cl 0.9 --lowerLimit -n .low_background_n1.fcgrid.lo"
+ },
+ "cpu_seconds_wall": 44.4
+}

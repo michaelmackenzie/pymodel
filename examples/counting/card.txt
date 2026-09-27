@@ -1,0 +1,27 @@
+# Single-bin counting experiment: s = 12, b = 80, n = 80.
+# Demonstrates symmetric and asymmetric lnN, gmN, a rateParam with a Gaussian `param`
+# constraint, and nuisance groups.
+imax 1
+jmax 3
+kmax *
+------------------------------------------------------------------------
+bin          sr
+observation  80
+------------------------------------------------------------------------
+bin          sr       sr       sr       sr
+process      sig      bkg      bkg_cr   bkg_free
+process      0        1        2        3
+rate         12       50       20       10
+------------------------------------------------------------------------
+lumi         lnN      1.025    1.025    -        -
+sig_eff      lnN      1.05     -        -        -
+bkg_norm     lnN      -        1.10     -        -
+bkg_asym     lnN      -        0.95/1.08 -       -
+cr_stat      gmN 40   -        -        0.5      -
+------------------------------------------------------------------------
+scale_free   rateParam sr bkg_free 1.0
+scale_free   param 1.0 0.2
+------------------------------------------------------------------------
+theory       group = bkg_norm bkg_asym
+experiment   group = lumi sig_eff
+stat         group = cr_stat

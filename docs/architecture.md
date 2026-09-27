@@ -1,45 +1,51 @@
-# Architecture and Code Map
+# Architecture
 
-pymodel uses a shared CLI core with backend adapters.
+```
+Combine datacard + ROOT shapes
+        │  modelspec/datacard.py  (Combine's own DatacardParser, vendored in third_party/combine)
+        ▼
+    ModelIR  ──────────────────────  modelspec/bundle.py  (build: JSON + <stem>_objects.root)
+        │  stat_backends/<name>  (hfmodel: pyhf, zmodel: zfit, roomodel: RooFit)
+        ▼
+    Likelihood  (nll_main, expected_by_process, sample_unbinned)
+        │  inference/  (shared by every backend)
+        ▼
+  fitting · toys · test statistics · asymptotic CLs · toy CLs · Feldman–Cousins · scans
+        │  pymodel_core.py (CLI)  →  JSON result with `flags`  (+ plots)
+```
 
-## High-Level Flow
+## Layers
 
-1. CLI parses `<backend> <command> ...`
-2. Backend adapter registers backend-specific arguments
-3. Core dispatches to backend methods (`build_model`, `load_summary`, `run_analysis`)
-4. Backend implementation calls concrete modules in `python/hfmodel`, `python/zmodel`, or `python/roomodel`
+| Layer | Files | Responsibility |
+|---|---|---|
+| Datacard parsing | `third_party/combine/` | Combine's parser, unmodified apart from relative imports |
+| Model IR | `modelspec/ir.py` | Explicit, JSON-serialisable description of the model (the semantics are in its docstring) |
+| IR construction | `modelspec/datacard.py`, `modelspec/rootinput.py` | Shape resolution with Combine's precedence and file lookup; reading TH1 / RooDataHist / RooDataSet / RooAbsPdf / `_norm` / RooMultiPdf; everything unsupported raises `UnsupportedFeature` |
+| Reference formulas | `modelspec/semantics.py` | numpy ports of Combine's asymPow, smooth step and vertical morphing |
+| Backends | `stat_backends/<name>/` | `ModelIR` → `Likelihood`; each declares `supported_features`, and `build_likelihood` rejects models that use anything else |
+| Oracle | `inference/semantic_likelihood.py` | numpy `Likelihood` built from `semantics.py`; backends are tested against it |
+| Inference | `inference/*.py` | Fitter (iminuit), constraint terms and global observables, toy modes, q̃/t/q₀, AsymptoticLimits, HybridNew-style toy CLs and FC, significance, scans, result schema, plots |
+| CLI | `python/pymodel`, `python/pymodel_core.py`, `bin/*` | `pymodel <backend> <command> INPUT [options]` |
 
-## Main Modules
+## Design rules
+1. **Combine is the reference.** Definitions live in `docs/statistics.md`, and the tests
+   compare them against Combine outputs (`tests/fixtures/`).
+2. **One implementation of each statistical method.** Backends evaluate likelihoods and never
+   implement fits, toys or limits.
+3. **Fail loudly.** Unsupported datacard content raises an error. Anything that makes a number
+   suspect goes into the result's `flags`. Nothing is dropped or approximated silently.
+4. **Constraint terms and global observables belong to the shared layer.** They come from
+   the IR, so all backends treat them identically. Backends compute the main measurement only.
+5. **One NLL convention** (see `inference/model.py`), so backends can be compared number for
+   number.
 
-- CLI and dispatch:
-  - [python/pymodel](../python/pymodel)
-  - [python/pymodel_core.py](../python/pymodel_core.py)
-- Backend registry and interface:
-  - [python/backends/__init__.py](../python/backends/__init__.py)
-  - [python/backends/base.py](../python/backends/base.py)
-- Backend adapters:
-  - [python/backends/hfmodel/implementation.py](../python/backends/hfmodel/implementation.py)
-  - [python/backends/zmodel/implementation.py](../python/backends/zmodel/implementation.py)
-  - [python/backends/roomodel/implementation.py](../python/backends/roomodel/implementation.py)
-
-## Shared Utility Layers
-
-- Card parsing dataclasses and parser: [python/backends/card_parser.py](../python/backends/card_parser.py)
-- Build helpers: [python/backends/builder_common.py](../python/backends/builder_common.py)
-- Shared analysis reporting and console formatting:
-  - [python/backends/analysis_common.py](../python/backends/analysis_common.py)
-  - [python/backends/analysis_console.py](../python/backends/analysis_console.py)
-  - [python/backends/analysis_reporting.py](../python/backends/analysis_reporting.py)
-- Shared plotting wrapper support: [python/backends/plot_analysis_common.py](../python/backends/plot_analysis_common.py)
-- Shared conversion support: [python/backends/datacard_convert_common.py](../python/backends/datacard_convert_common.py)
-- Shared zfit parameter traversal: [python/backends/zfit_parameter_utils.py](../python/backends/zfit_parameter_utils.py)
-
-## Backend-Specific Trees
-
-- hfmodel code: [python/hfmodel](../python/hfmodel)
-- zmodel code: [python/zmodel](../python/zmodel)
-- roomodel code: [python/roomodel](../python/roomodel)
-
-## Notes on Standalone Behavior
-
-Entry scripts under backend directories include path bootstrap logic so they can be invoked directly during development and conversion workflows.
+## Adding things
+- **A datacard feature.** Parse it in `modelspec/datacard.py` into IR fields (never a
+  free-form string). Give it a feature name in `ModelIR.features()`, add it to the oracle
+  and to `docs/statistics.md`, implement it in each backend that can support it exactly, and
+  add a card to the grammar tests in `tests/`.
+- **A statistical method.** Add it under `inference/`, built on `Fitter`, `TestStat` and
+  `toys`. Give it a CLI command in `pymodel_core.py`, a result schema with flags, and a
+  Combine fixture comparison.
+- **A backend.** Create a `stat_backends/<name>/` package with `BACKEND`, add it to
+  `stat_backends.BACKEND_NAMES`, and give it a `tests/backend_<name>_check.py`.

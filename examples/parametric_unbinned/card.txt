@@ -1,0 +1,18 @@
+# Unbinned parametric model: RooDataSet data, Gaussian signal with a `param` nuisance on
+# its mean, exponential background with a floating slope and a floating bkg_norm.
+imax 1
+jmax 1
+kmax *
+------------------------------------------------------------------------
+shapes * * workspace.root w:$PROCESS
+------------------------------------------------------------------------
+bin          sr
+observation  -1
+------------------------------------------------------------------------
+bin          sr    sr
+process      sig   bkg
+process      0     1
+rate         20    1
+------------------------------------------------------------------------
+lumi         lnN   1.025 -
+sig_scale    param 0 1

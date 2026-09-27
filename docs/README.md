@@ -1,45 +1,12 @@
-# pymodel Documentation
+# pymodel documentation
 
-This directory contains detailed documentation for the unified `pymodel` workflow.
-
-## Documentation Map
-
-- [Getting Started](getting-started.md)
-- [CLI Reference](cli-reference.md)
-- [hfmodel Backend Guide](backend-hfmodel.md)
-- [zmodel Backend Guide](backend-zmodel.md)
-- [roomodel Backend Guide](backend-roomodel.md)
-- [Cards and Conversion Workflows](cards-and-conversion.md)
-- [Architecture and Code Map](architecture.md)
-- [Testing and Regression](testing-and-regression.md)
-
-## Primary Entrypoints
-
-- Unified CLI script: [python/pymodel](../python/pymodel)
-- Core dispatcher: [python/pymodel_core.py](../python/pymodel_core.py)
-- Shell wrapper: [bin/pymodel](../bin/pymodel)
-
-## Source Roots
-
-- Shared backend infrastructure: [python/backends](../python/backends)
-- hfmodel implementation: [python/hfmodel](../python/hfmodel)
-- zmodel implementation: [python/zmodel](../python/zmodel)
-- roomodel implementation: [python/roomodel](../python/roomodel)
-
-## Example Data and Cards
-
-- hfmodel examples: [examples/hfmodel](../examples/hfmodel)
-- zmodel examples: [examples/zmodel](../examples/zmodel)
-- roomodel examples: [examples/roomodel](../examples/roomodel)
-
-## Suggested Read Order
-
-1. [Getting Started](getting-started.md)
-2. [CLI Reference](cli-reference.md)
-3. Backend-specific guide:
-   - [hfmodel Backend Guide](backend-hfmodel.md)
-   - [zmodel Backend Guide](backend-zmodel.md)
-   - [roomodel Backend Guide](backend-roomodel.md)
-4. [Cards and Conversion Workflows](cards-and-conversion.md)
-5. [Testing and Regression](testing-and-regression.md)
-6. [Architecture and Code Map](architecture.md)
+| page | contents |
+|---|---|
+| [getting-started.md](getting-started.md) | setup and a first analysis |
+| [cli-reference.md](cli-reference.md) | every command and option |
+| [statistics.md](statistics.md) | **what is computed**, with the matching Combine code |
+| [cards-and-conversion.md](cards-and-conversion.md) | datacard support matrix per backend; bundles and export |
+| [architecture.md](architecture.md) | code map and design rules |
+| [backend-roomodel.md](backend-roomodel.md), [backend-zmodel.md](backend-zmodel.md), [backend-hfmodel.md](backend-hfmodel.md) | backend implementation notes and validation numbers |
+| [testing-and-regression.md](testing-and-regression.md) | validation suite, Combine fixtures, tolerances |
+| [improvement-plan.md](improvement-plan.md) | the September 2026 review that led to the v2 rewrite |
