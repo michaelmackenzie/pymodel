@@ -9,7 +9,8 @@
 2. Combine (when text2workspace.py and the Combine library are available): total-NLL
    differences between parameter points and per-process yields against the text2workspace
    workspace of the same card (templates, shapeN, rateParam formula, the unbinned card, and
-   the user's real cards copied to --real-dir/datacards + workspaces).
+   the user's real cards copied to --real-dir/datacards + workspaces, and the autoMCStats
+   example examples/mcstats).
 3. Export: the exported RooWorkspace, evaluated with RooFit, reproduces NLL differences.
 4. CLI on an unbinned card (limit, fit, fit -t 20, scan, fc) and on the counting cards
    in --core-dir (asymptotic and toy limits vs the reference numbers).
@@ -143,6 +144,17 @@ beta   {algo} 0.5   -    1    1
 """)
 
 
+def make_mcstats(wd):
+    """examples/mcstats (autoMCStats), copied into wd/mcstats with its inputs generated there."""
+    src = os.path.join(HERE, "..", "examples", "mcstats")
+    dest = os.path.join(wd, "mcstats")
+    os.makedirs(dest, exist_ok=True)
+    for f in ("card.txt", "make_inputs.py"):
+        shutil.copy(os.path.join(src, f), dest)
+    subprocess.run([sys.executable, "make_inputs.py"], cwd=dest, check=True, capture_output=True)
+    return os.path.join(dest, "card.txt")
+
+
 def make_histpdf(wd):
     ROOT = R.root()
     path = os.path.join(wd, "histpdf.root")
@@ -245,6 +257,8 @@ def random_points(lik, n, seed):
             elif p.floating:
                 if p.origin == "gmN":
                     x[i] = max(1.0, p.value + rng.normal(0, 3))
+                elif p.origin == "autoMCStats" and p.constraint.kind == "poisson":
+                    x[i] = p.value * rng.uniform(0.3, 2.0)
                 elif p.constraint is not None and p.constraint.kind == "flat":
                     x[i] = rng.uniform(p.lo, p.hi)
                 elif p.origin in ("workspace",):
@@ -338,23 +352,48 @@ def combine_check(card, label, cwd, tol=1e-6, npts=7, round_kappas=False):
             elif lik.model.parameters[n].floating:
                 raise KeyError(f"parameter {n} not in the Combine workspace")
 
+    # autoMCStats: RooRealIntegral (ROOT 6.32) integrates CMSHistErrorPropagator numerically,
+    # so RooFit's extended term differs from the exact bin sum by a parameter-dependent ~1e-5
+    # relative amount.  Replace it by the bin sum (what the model defines) and report its size.
+    xobs = w.var("CMS_th1x")
+    props = [(w.function(f"prop_bin{ch.name}"), w.pdf(f"pdf_bin{ch.name}_nuis") or w.pdf(f"pdf_bin{ch.name}"))
+             for ch in m.channels if ch.mcstats is not None]
+
+    def integral_artefact():
+        out = 0.0
+        for prop, sumpdf in props:
+            exact = 0.0
+            for b in range(xobs.getBins()):
+                xobs.setVal(b + 0.5)
+                exact += prop.getVal()
+            out += sumpdf.expectedEvents(ROOT.RooArgSet(xobs)) - exact
+        return out
+
+    integ = {(ch.name, pr.name): float(np.sum(pr.shape.contents))
+             for ch in m.channels if ch.mcstats is not None for pr in ch.processes}
     mine, comb = [], []
+    arte = []
     worst_y = 0.0
     for x in random_points(lik, npts, 2):
         setw(x)
-        comb.append(nll.getVal())
+        a = integral_artefact() if props else 0.0
+        arte.append(a)
+        comb.append(nll.getVal() - a)
         mine.append(lik.nll(x, data))
         lik.set_values(x)
         for cb in lik.mw.channels:
             ch = lik._cpp[cb.name]
             for ip, pb in enumerate(cb.procs):
                 y = ch.proc_yield(ip)
+                if (cb.name, pb.name) in integ:  # CMSHistFunc: coefficient = yield / template integral
+                    y = y / integ[(cb.name, pb.name)] if integ[(cb.name, pb.name)] > 0 else 0.0
                 fn = w.function(f"n_exp_final_bin{cb.name}_proc_{pb.name}") or \
                     w.function(f"n_exp_bin{cb.name}_proc_{pb.name}")
                 worst_y = max(worst_y, abs(y - fn.getVal()) / max(abs(fn.getVal()), 1e-12))
     mine, comb = np.array(mine), np.array(comb)
     raw = float(np.max(np.abs((mine - mine[0]) - (comb - comb[0]))))
-    print(f"[combine] {label}: max |dNLL - dNLL_combine| = {raw:.2e}; max rel yield diff {worst_y:.2e}")
+    print(f"[combine] {label}: max |dNLL - dNLL_combine| = {raw:.2e}; max rel yield diff {worst_y:.2e}"
+          + (f"; Combine's numeric-integral artefact removed: up to {np.ptp(arte):.2e}" if props else ""))
     check(raw < tol and worst_y < tol, f"{label} agrees with Combine")
     return raw
 
@@ -473,10 +512,10 @@ def main():
     os.chdir(wd)
     cards = {"counting": make_counting(wd), "formula": make_formula_card(wd), "templates": make_templates(wd),
              "templates-shapeN": make_templates(wd, "shapeN"), "histpdf": make_histpdf(wd),
-             "unbinned": make_unbinned(wd)}
+             "unbinned": make_unbinned(wd), "mcstats": make_mcstats(wd)}
     os.chdir(old)
     os.chdir(wd)  # datacards use paths relative to the card directory / working directory
-    for key in ("counting", "templates", "histpdf"):
+    for key in ("counting", "templates", "histpdf", "mcstats"):
         oracle_check(cards[key], key)
     for key in ("counting", "templates", "histpdf", "unbinned"):
         export_check(cards[key], key, wd)
@@ -485,6 +524,11 @@ def main():
             combine_check(cards[key], key, wd)
         for key in ("templates", "templates-shapeN"):
             combine_check(cards[key], key, wd, round_kappas=True)
+        mdir = os.path.dirname(cards["mcstats"])
+        os.chdir(mdir)
+        # tolerance 1e-5: Combine stores the templates and the rescaled up/down templates as TH1F
+        combine_check("card.txt", "mcstats (autoMCStats)", mdir, tol=1e-5, round_kappas=True, npts=12)
+        os.chdir(wd)
         if real_dir:
             rd = real_dir
             for card in ("combine_mumem_75_evt_r0104_hists.txt", "combine_mumem_75_evt_r0104_funcs.txt",

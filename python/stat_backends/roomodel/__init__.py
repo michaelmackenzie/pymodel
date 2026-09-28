@@ -22,8 +22,11 @@ class RooBackend(Backend):
         "shape:counting", "shape:template", "shape:parametric", "shape:parametric-histogram",
         "shape:envelope", "discrete",
         "syst:shape", "syst:shapeN",
+        "syst:pdf-morph", "syst:pdf-morphN", "syst:histpdf-morph", "syst:histpdf-morphN",
         "norm:lnN", "norm:asym_lnN", "norm:lnU", "norm:gmN", "norm:rate_param", "norm:formula", "norm:ws_norm",
         "constraint:gauss", "constraint:bifurgauss", "constraint:poisson", "constraint:flat",
+        "mcstats:bb-lite",
+        "obs:multidim",  # N-D channels: pdfs at the N-D bin centres / N-D events (evaluator.py)
     })
 
     def runtime_versions(self):
@@ -44,6 +47,16 @@ class RooBackend(Backend):
     def export(self, model, path, options):
         """RooWorkspace ``w`` with model_s, ModelConfig(_bonly), constraints and data_obs."""
         from stat_backends.roomodel.export import export_workspace
+
+        if any(ch.observable.ndim > 1 for ch in model.channels):
+            from stat_backends.base import UnsupportedByBackend
+
+            raise UnsupportedByBackend("roomodel cannot export multi-dimensional channels yet")
+        if any(ch.mcstats is not None for ch in model.channels):
+            from stat_backends.base import UnsupportedByBackend
+
+            raise UnsupportedByBackend("roomodel cannot export autoMCStats channels yet (the Barlow-Beeston-lite "
+                                       "terms live in the C++ evaluator, not in a RooAbsPdf)")
 
         missing = sorted(model.features() - set(self.supported_features))
         if missing:

@@ -1,8 +1,9 @@
 """zmodel: zfit / TensorFlow backend.
 
 Counting, binned and unbinned (optionally weighted) channels; histogram templates with
-Combine's vertical-morph shape systematics; parametric RooFit pdfs translated into zfit pdfs
-(class map in ``roofit.py``); lnN, asymmetric lnN, lnU, gmN, rateParam, rateParam formulas
+Combine's vertical (``shape``) and log-vertical (``shapeN``) morphs; parametric RooFit pdfs
+translated into zfit pdfs (class map in ``roofit.py``), with VerticalInterpPdf /
+FastVerticalInterpHistPdf2 shape systematics; RooMultiPdf envelopes (Combine library); lnN, asymmetric lnN, lnU, gmN, rateParam, rateParam formulas
 and ``<pdf>_norm`` functions built from RooFormulaVar/RooProduct/RooRealVar.  Every
 translated pdf is compared with RooFit when the likelihood is created (``likelihood.py``).
 """
@@ -22,9 +23,11 @@ class ZBackend(Backend):
     supported_features = frozenset({
         "data:count", "data:binned", "data:unbinned", "data:weighted",
         "shape:counting", "shape:template", "shape:parametric", "shape:parametric-histogram",
-        "syst:shape",
+        "shape:envelope", "discrete",
+        "syst:shape", "syst:shapeN", "syst:pdf-morph", "syst:histpdf-morph", "syst:histpdf-morphN",
         "norm:lnN", "norm:asym_lnN", "norm:lnU", "norm:gmN", "norm:rate_param", "norm:formula", "norm:ws_norm",
         "constraint:gauss", "constraint:bifurgauss", "constraint:poisson", "constraint:flat",
+        "mcstats:bb-lite",
     })
 
     def add_arguments(self, parser):

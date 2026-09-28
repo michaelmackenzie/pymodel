@@ -25,6 +25,8 @@ Exit status 1 if any check fails.
 import argparse
 import math
 import os
+import shutil
+import subprocess
 import sys
 import time
 
@@ -193,6 +195,8 @@ def random_point(lik, rng):
             v[i] = rng.uniform(10.0, 40.0)
         elif p.origin in ("rateParam",):
             v[i] = rng.uniform(0.5, 2.0)
+        elif p.origin == "autoMCStats" and p.constraint.kind == "poisson":
+            v[i] = p.value * rng.uniform(0.3, 2.0)
         elif p.role == "nuisance":
             v[i] = rng.uniform(-2.5, 2.5)
     return v
@@ -313,15 +317,16 @@ def translate_and_compare(R, w, name, obs_name, rng, npoints=5, integral=True, t
                     c = nominal[v.GetName()]
                     v.setVal(min(hi, max(lo, c + 0.15 * (hi - lo) * rng.uniform(-1, 1))))
                 make_param(v.GetName()).set_value(v.getVal())
-            d_r, b_r, d_def = roofit_reference(R, pdf, obs_name, xs, edges, "center")
-            worst_def = max(worst_def, float(np.max(np.abs(d_def - d_r)) / np.max(d_r)))
+            # reference: RooFit with its default integrator (Combine); d_prec: precise integrals
+            d_r, b_r, d_prec, _ = roofit_reference(R, pdf, obs_name, xs, edges, "center")
+            worst_def = max(worst_def, float(np.max(np.abs(d_prec - d_r)) / np.max(d_r)))
             d_z = np.asarray(zpdf.pdf(xs[:, None])).ravel()
             worst_d = max(worst_d, float(np.max(np.abs(d_z - d_r)) / np.max(d_r)))
             xc = 0.5 * (np.array(edges[:-1]) + np.array(edges[1:]))
             b_z = np.asarray(zpdf.pdf(xc[:, None])).ravel() * np.diff(edges)
             worst_b = max(worst_b, float(np.max(np.abs(b_z - b_r)) / np.max(b_r)))
             if integral:
-                _, i_r, _ = roofit_reference(R, pdf, obs_name, xs[:2], edges, "integral")
+                _, i_r, _, _ = roofit_reference(R, pdf, obs_name, xs[:2], edges, "integral")
                 i_z = np.asarray(bin_integrals(zpdf, tr.space.obs[0], edges)).ravel()
                 worst_i = max(worst_i, float(np.max(np.abs(i_z - i_r)) / np.max(i_r)))
     finally:
@@ -331,7 +336,7 @@ def translate_and_compare(R, w, name, obs_name, rng, npoints=5, integral=True, t
     check(f"class map {pdf.ClassName()} '{name}'", ok,
           f"(densities {worst_d:.1e}, centre fractions {worst_b:.1e}, "
           f"bin integrals {('%.1e' % worst_i) if integral else 'not checked'}; "
-          f"classes {sorted(tr.classes)}{'; RooFit default normalisation off by %.1e' % worst_def if worst_def > 1e-9 else ''})"
+          f"classes {sorted(tr.classes)}{'; RooFit default normalisation vs precise %.1e' % worst_def if worst_def > 1e-9 else ''})"
           f"{extra_note}")
     return tr.classes
 
@@ -584,6 +589,11 @@ def main():
         templ = compare_oracle("TH1 templates, 2 channels, shape systs", write("templ.txt", TEMPLATE_CARD))
         make_param_hist_ws(R, "phist.root")
         compare_oracle("parametric-histogram", write("phist.txt", PARAM_HIST_CARD))
+        src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples", "mcstats")
+        for f in ("card.txt", "make_inputs.py"):
+            shutil.copy(os.path.join(src, f), os.path.join(workdir, "mcstats_" + f))
+        subprocess.run([sys.executable, "mcstats_make_inputs.py"], cwd=workdir, check=True, capture_output=True)
+        compare_oracle("autoMCStats (examples/mcstats)", "mcstats_card.txt")
     finally:
         os.chdir(cwd)
 

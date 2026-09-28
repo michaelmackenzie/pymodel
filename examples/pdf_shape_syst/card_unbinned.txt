@@ -1,0 +1,21 @@
+# The model of card.txt fit to unbinned data (RooDataSet).
+imax 1
+jmax 1
+kmax *
+------------------------------------------------------------------------
+shapes data_obs * workspace.root w:data_obs_unbinned
+shapes * * workspace.root w:$PROCESS_pdf w:$PROCESS_pdf_$SYSTEMATIC
+------------------------------------------------------------------------
+bin          sr
+observation  -1
+------------------------------------------------------------------------
+bin          sr    sr
+process      sig   bkg
+process      0     1
+rate         30    400
+------------------------------------------------------------------------
+lumi         lnN   1.025 -
+bkg_norm     lnN   -     1.05
+sigshift     shape 1     -
+sigwidth     shape 0.5   -
+bkgslope     shape -     1

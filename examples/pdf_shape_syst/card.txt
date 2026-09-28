@@ -1,0 +1,23 @@
+# Shape systematics on RooAbsPdfs (Combine VerticalInterpPdf): Gaussian signal with a mean
+# shift (scale 1) and a width change (scale 0.5), exponential background with a slope change.
+# The shapes lines use the mumep_ana pattern <proc>_pdf / <proc>_pdf_$SYSTEMATIC.
+imax 1
+jmax 1
+kmax *
+------------------------------------------------------------------------
+shapes data_obs * workspace.root w:data_obs
+shapes * * workspace.root w:$PROCESS_pdf w:$PROCESS_pdf_$SYSTEMATIC
+------------------------------------------------------------------------
+bin          sr
+observation  -1
+------------------------------------------------------------------------
+bin          sr    sr
+process      sig   bkg
+process      0     1
+rate         30    400
+------------------------------------------------------------------------
+lumi         lnN   1.025 -
+bkg_norm     lnN   -     1.05
+sigshift     shape 1     -
+sigwidth     shape 0.5   -
+bkgslope     shape -     1

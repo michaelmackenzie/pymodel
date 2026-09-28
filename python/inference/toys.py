@@ -73,7 +73,9 @@ def _draw_from_constraint(c: I.Constraint, center: float, lo: float, hi: float, 
 
 
 def generate_main(lik, values, rng) -> Dict[str, MainData]:
-    """Poisson-fluctuated main data for every channel at ``values``."""
+    """Poisson-fluctuated main data for every channel at ``values`` (binned: per flattened
+    bin, also for N-D channels; unbinned: Poisson(nu_tot) events from the backend's
+    ``sample_unbinned``, shape (n,) or (n, ndim))."""
     expected = lik.expected_counts(values)
     out = {}
     for ch in lik.model.channels:
@@ -88,14 +90,16 @@ def generate_main(lik, values, rng) -> Dict[str, MainData]:
 
 def asimov_main(lik, values) -> Dict[str, MainData]:
     """Expected data.  Unbinned channels get a weighted dataset at the bin centres of the
-    observable binning (what Combine's generateAsimov does)."""
+    observable binning (what Combine's generateAsimov does; N-D: at the centres of the
+    product bins, as generateWithHisto does with a TH2/TH3)."""
     expected = lik.expected_counts(values)
     out = {}
     for ch in lik.model.channels:
         mu = np.asarray(expected[ch.name], dtype=float)
         if ch.data.kind == "unbinned":
-            edges = np.asarray(ch.observable.edges)
-            out[ch.name] = MainData(kind="unbinned", values=0.5 * (edges[:-1] + edges[1:]), weights=mu)
+            centers = ch.observable.bin_centers()
+            out[ch.name] = MainData(kind="unbinned", values=centers[:, 0] if ch.observable.ndim == 1 else centers,
+                                    weights=mu)
         else:
             out[ch.name] = MainData(kind=ch.data.kind, counts=mu)
     return out
@@ -134,8 +138,8 @@ def asimov_at(lik, values, label="asimov") -> Dataset:
                    label=label, truth=lik.values_dict(values))
 
 
-def generate_toys(lik, fitter, cfg: ToyConfig, rng, observed: Optional[Dataset] = None):
-    """Generate datasets for ``fit``/``generate`` style toys.  Returns (datasets, info)."""
+def toy_base(lik, fitter, cfg: ToyConfig, observed: Optional[Dataset] = None):
+    """Parameter values the toys of ``cfg`` are generated around, and the run info."""
     observed = observed or observed_dataset(lik.model)
     info = {"mode": cfg.describe()}
     if cfg.frequentist:
@@ -147,25 +151,61 @@ def generate_toys(lik, fitter, cfg: ToyConfig, rng, observed: Optional[Dataset] 
                                    "to generate from the pre-fit values")
     else:
         base = _prefit(lik, cfg.expect_signal)
+    return base, info
+
+
+def make_toy(lik, cfg: ToyConfig, base, rng, index: int) -> Dataset:
+    """Toy number ``index`` of ``cfg`` (not Asimov), drawn with ``rng``."""
+    if cfg.frequentist:
+        return generate_at(lik, base, rng, label=f"toy_{index}")
+    nominal_gobs = observed_dataset(lik.model).global_obs
+    x = np.array(base, dtype=float)
+    if not cfg.no_systematics:
+        for p in lik.model.parameters.values():
+            c = p.constraint
+            if c is None or p.role == I.ROLE_CONSTANT:
+                continue
+            center = nominal_gobs.get(p.name, p.value)
+            x[lik.index[p.name]] = _draw_from_constraint(c, center, p.lo, p.hi, rng, "param")
+    return Dataset(main=generate_main(lik, x, rng), global_obs=dict(nominal_gobs), label=f"toy_{index}",
+                   truth=lik.values_dict(x))
+
+
+def generate_toys(lik, fitter, cfg: ToyConfig, rng, observed: Optional[Dataset] = None):
+    """Generate datasets for ``fit``/``generate`` style toys.  Returns (datasets, info).
+
+    ``rng`` is a ``ToySeeds``, an int seed or a numpy Generator (see ``inference.parallel``);
+    toy i is drawn from its own stream (STREAM_GEN, i), so toy i does not depend on how many
+    toys are generated or in which process."""
+    from inference.parallel import PURPOSE_GENERATE, STREAM_GEN, as_seeds
+
+    seeds = as_seeds(rng)
+    observed = observed or observed_dataset(lik.model)
+    base, info = toy_base(lik, fitter, cfg, observed)
     if cfg.ntoys == -1:
         if cfg.frequentist:
             return [asimov_at(lik, base)], info
         return [Dataset(main=asimov_main(lik, base), global_obs=observed_dataset(lik.model).global_obs,
                         label="asimov", truth=lik.values_dict(base))], info
-    toys = []
-    nominal_gobs = observed_dataset(lik.model).global_obs
-    for i in range(cfg.ntoys):
-        if cfg.frequentist:
-            toys.append(generate_at(lik, base, rng, label=f"toy_{i}"))
-            continue
-        x = base.copy()
-        if not cfg.no_systematics:
-            for p in lik.model.parameters.values():
-                c = p.constraint
-                if c is None or p.role == I.ROLE_CONSTANT:
-                    continue
-                center = nominal_gobs.get(p.name, p.value)
-                x[lik.index[p.name]] = _draw_from_constraint(c, center, p.lo, p.hi, rng, "param")
-        toys.append(Dataset(main=generate_main(lik, x, rng), global_obs=dict(nominal_gobs), label=f"toy_{i}",
-                            truth=lik.values_dict(x)))
+    toys = [make_toy(lik, cfg, base, seeds.rng(STREAM_GEN, i, PURPOSE_GENERATE), i) for i in range(cfg.ntoys)]
     return toys, info
+
+
+def toy_fit_task(ctx, task):
+    """Worker task for ``fit -t`` / ``generate``: make toys ``start..stop-1`` of ``cfg`` around
+    ``base`` (stream STREAM_GEN) and, with ``fit``, fit each one (fitter restarts seeded per
+    toy).  Returns [(toy without native caches, FitResult or None)]."""
+    from inference.parallel import PURPOSE_FREE_FIT, PURPOSE_GENERATE, STREAM_GEN, ToySeeds, portable, seeded_fitter
+
+    lik, fitter = ctx.lik, ctx.fitter
+    seeds = ToySeeds(task["seed"])
+    cfg, base = task["cfg"], np.asarray(task["base"], dtype=float)
+    out = []
+    for i in range(task["start"], task["stop"]):
+        toy = make_toy(lik, cfg, base, seeds.rng(STREAM_GEN, i, PURPOSE_GENERATE), i)
+        res = None
+        if task["fit"]:
+            with seeded_fitter(fitter, seeds, STREAM_GEN, i, PURPOSE_FREE_FIT):
+                res = fitter.fit(toy, fixed=task["fixed"], hesse=True, minos=task["minos"])
+        out.append((portable(toy), res))
+    return out

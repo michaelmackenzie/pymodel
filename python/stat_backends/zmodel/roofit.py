@@ -22,11 +22,20 @@ Class map (RooFit 6.32 definitions):
                      N-1 -> c_i and 1 - sum c; recursive -> c_0, (1-c_0) c_1, ..., prod(1-c_i)
   RooHistPdf      -> HistStepPDF: interpolation order 0, density = bin content / bin width,
                      zero outside the histogram, analytic integral
-  RooGenericPdf   -> FormulaPDF: the TFormula expression (formula.py), integral by
-                     composite Gauss-Legendre quadrature (QUAD_PANELS x QUAD_NODES points)
+  RooGenericPdf   -> FormulaPDF: the TFormula expression (formula.py), integrated with an exact
+                     emulation of RooFit's default numerical integrator (``roo_integrate``)
   RooLandauCB     -> FormulaPDF with Combine's closed form (src/RooLandauCB.cc; Combine uses
-                     vdt::fast_exp/fast_pow, which agree with exp/pow to ~1e-15), quadrature
-                     integral as RooFit also integrates it numerically
+                     vdt::fast_exp/fast_pow, which agree with exp/pow to ~1e-15), integrated
+                     like RooGenericPdf (RooFit has no analytic integral for either)
+
+Numerical normalisation.  RooFit (hence Combine) normalises pdfs without an analytic integral
+with RooIntegrator1D: trapezoid refinement (stage j adds 2^(j-2) midpoints) with Romberg
+(polynomial, 5-point) extrapolation to h = 0, stopping at the first stage j >= 5 whose
+extrapolation error is <= epsRel*|value| or <= epsAbs (both 1e-7 by default).  This is not
+a precise integral: next to a kink (e.g. ``max(0, ...)``) it can be off by ~1e-4.  zmodel
+reproduces it step by step (``roo_integrate``, bit-identical in numpy tests), so that the
+likelihood is Combine's.  The graph computes ROO_INT_STAGES stages; a pdf that RooFit would
+refine further (it allows 20) gives NaN and nll_main raises.
   functions: RooRealVar, RooConstVar, RooFormulaVar, RooProduct (real components only),
              RooRecursiveFraction (l0 * prod_{i>0} (1 - l_i), what RooAddPdf builds for recursive fractions)
 """
@@ -41,8 +50,7 @@ import numpy as np
 from stat_backends.base import UnsupportedByBackend
 from stat_backends.zmodel import formula as F
 
-QUAD_PANELS = 256
-QUAD_NODES = 16
+ROO_INT_STAGES = 15   # trapezoid stages computed in the graph (2^(ROO_INT_STAGES-1) + 1 points)
 
 PDF_CLASSES = ("RooGaussian", "RooExponential", "RooCBShape", "RooCrystalBall", "RooChebychev", "RooBernstein",
                "RooPolynomial", "RooUniform", "RooAddPdf", "RooHistPdf", "RooGenericPdf", "RooLandauCB")
@@ -93,17 +101,93 @@ def proxies(R, arg) -> Dict[str, object]:
 # quadrature and custom zfit pdfs
 # ----------------------------------------------------------------------------------------
 
-_GL_T, _GL_W = np.polynomial.legendre.leggauss(QUAD_NODES)
-_Q_T = ((np.arange(QUAD_PANELS)[:, None] + 0.5 * (_GL_T[None, :] + 1.0)) / QUAD_PANELS).ravel()  # in [0, 1]
-_Q_W = np.tile(0.5 * _GL_W / QUAD_PANELS, QUAD_PANELS)
+def _roo_int_nodes():
+    """Unit-interval nodes of RooIntegrator1D's trapezoid stages 1..ROO_INT_STAGES, in the
+    order they are added: the end points (stage 1), then the 2^(j-2) midpoints of stage j."""
+    nodes = [np.array([0.0, 1.0])]
+    for j in range(2, ROO_INT_STAGES + 1):
+        n = 1 << (j - 2)
+        nodes.append((0.5 + np.arange(n)) / n)
+    return np.concatenate(nodes)
 
 
-def quad(func, lower, upper):
-    """Composite Gauss-Legendre integral of the vectorised ``func`` over [lower, upper]."""
+_RI_NODES = _roo_int_nodes()
+
+
+def _polint0(xa, ya):
+    """Numerical Recipes polint at x = 0 as RooIntegrator1D::extrapolate does it (the node with
+    the smallest |h| is the last one): (value, error estimate)."""
+    npts = len(xa)
+    c, d = list(ya), list(ya)
+    ns = npts - 1
+    val = ya[ns]
+    ns -= 1
+    err = None
+    for m in range(1, npts):
+        for i in range(npts - m):
+            ho, hp = xa[i], xa[i + m]
+            den = (c[i + 1] - d[i]) / (ho - hp)
+            d[i] = hp * den
+            c[i] = ho * den
+        if 2 * (ns + 1) < npts - m:
+            err = c[ns + 1]
+        else:
+            err = d[ns]
+            ns -= 1
+        val = val + err
+    return val, err
+
+
+def roo_integrate(func, lower, upper, eps_rel=1e-7, eps_abs=1e-7):
+    """RooIntegrator1D (Trapezoid, Wynn-Epsilon extrapolation = 5-point Romberg, maxSteps 20,
+    minSteps 999, fixSteps 0) of the vectorised ``func`` over [lower, upper], in znp.
+    ``lower``/``upper`` may be arrays (one integral per element; ``func`` then gets an array
+    with one more, last, axis).
+
+    Returns NaN where no stage up to ROO_INT_STAGES converges (RooFit would go on to stage 20)."""
+    import tensorflow as tf
     import zfit.z.numpy as znp
 
-    xs = lower + (upper - lower) * znp.asarray(_Q_T)
-    return (upper - lower) * znp.sum(func(xs) * znp.asarray(_Q_W))
+    lower = znp.asarray(lower, dtype=np.float64)
+    upper = znp.asarray(upper, dtype=np.float64)
+    width = upper - lower
+    fx = func(znp.expand_dims(lower, -1) + znp.expand_dims(width, -1) * znp.asarray(_RI_NODES))
+    s = [0.5 * width * (fx[..., 0] + fx[..., 1])]
+    off = 2
+    for j in range(2, ROO_INT_STAGES + 1):
+        n = 1 << (j - 2)
+        s.append(0.5 * (s[-1] + width * znp.sum(fx[..., off:off + n], axis=-1) / n))
+        off += n
+    h = [0.25 ** (j - 1) for j in range(1, ROO_INT_STAGES + 1)]
+    vals, conv = [], []
+    for j in range(5, ROO_INT_STAGES + 1):
+        val, err = _polint0(h[j - 5:j], s[j - 5:j])
+        vals.append(val)
+        conv.append((znp.abs(err) <= eps_rel * znp.abs(val)) | (znp.abs(err) <= eps_abs))
+    vals, conv = tf.stack(vals), tf.stack(conv)
+    first = tf.argmax(tf.cast(conv, tf.int32), axis=0)
+    stage = tf.reshape(tf.range(len(h) - 4, dtype=first.dtype), [-1] + [1] * (len(vals.shape) - 1))
+    picked = tf.reduce_sum(tf.where(stage == first[None], vals, tf.zeros_like(vals)), axis=0)
+    return znp.where(tf.reduce_any(conv, axis=0), picked, np.nan)
+
+
+def roofit_int_config(R, pdf):
+    """(epsRel, epsAbs) of the RooFit integrator ``pdf`` uses for 1D numerical integrals;
+    UnsupportedByBackend unless it is RooIntegrator1D with its default settings."""
+    cfg = pdf.getIntegratorConfig()
+    label = str(cfg.method1D().getCurrentLabel())
+    if label != "RooIntegrator1D":
+        raise UnsupportedByBackend(f"zmodel: '{pdf.GetName()}' is integrated with {label}; only RooFit's default "
+                                   "RooIntegrator1D is emulated")
+    sec = cfg.getConfigSection("RooIntegrator1D")
+    want = {"sumRule": 0, "extrapolation": 1, "maxSteps": 20, "minSteps": 999, "fixSteps": 0}
+    for key, val in want.items():
+        arg = sec.find(key)
+        got = arg.getCurrentIndex() if arg.InheritsFrom("RooCategory") else arg.getVal()
+        if int(round(got)) != val:
+            raise UnsupportedByBackend(f"zmodel: RooIntegrator1D {key} = {got} for '{pdf.GetName()}' (only the "
+                                       f"default {val} is emulated)")
+    return float(cfg.epsRel()), float(cfg.epsAbs())
 
 
 def _limits(limits):
@@ -130,8 +214,9 @@ def _pdf_types():
 
         _N_OBS = 1
 
-        def __init__(self, obs, params, func, name="FormulaPDF"):
+        def __init__(self, obs, params, func, eps=(1e-7, 1e-7), name="FormulaPDF"):
             self._func = func
+            self._eps = eps
             super().__init__(obs=obs, params=params, name=name)
 
         @zfit.supports()
@@ -140,7 +225,7 @@ def _pdf_types():
 
     def _formula_integral(limits, params, model):
         lower, upper = _limits(limits)
-        return quad(lambda xs: model._func(xs, params), lower, upper)
+        return roo_integrate(lambda xs: model._func(xs, params), lower, upper, *model._eps)
 
     FormulaPDF.register_analytic_integral(func=_formula_integral, limits=ANY)
 
@@ -371,6 +456,12 @@ class Translator:
                                        f"not the channel observable '{self.obs_name}'")
 
     # -- pdfs ---------------------------------------------------------------------------
+    def raw(self, p) -> "RawPdf":
+        """The un-normalised RooFit pdf ``p`` (for VerticalInterpPdf morphing, see RawPdf)."""
+        out = _raw_translate(self, p)
+        self.classes.add(p.ClassName())
+        return out
+
     def pdf(self, p):
         name = p.GetName()
         if name not in self._pdfs:
@@ -459,7 +550,7 @@ class Translator:
             return self._histpdf(p, what)
         if cls == "RooGenericPdf":
             s = self._formula(str(p.expression()), [d for d in p.dependents()], what)
-            return self._formula_pdf(s, "generic")
+            return self._formula_pdf(s, "generic", roofit_int_config(R, p))
         if cls == "RooLandauCB":
             px = proxies(R, p)
             self._obs_arg(px["x"], what)
@@ -470,10 +561,10 @@ class Translator:
             def fn(x, P, parts=parts):
                 return landau_cb(x, *[q.fn(x, P) for q in parts])
             s = Sym(fn=fn, leaves=set().union(*[q.leaves for q in parts]), depends_on_x=True)
-            return self._formula_pdf(s, "landaucb")
+            return self._formula_pdf(s, "landaucb", roofit_int_config(R, p))
         raise AssertionError(cls)
 
-    def _formula_pdf(self, s: Sym, base):
+    def _formula_pdf(self, s: Sym, base, eps):
         import zfit.z.numpy as znp
 
         params = {n: self.make_param(n) for n in sorted(s.leaves)}
@@ -481,7 +572,7 @@ class Translator:
 
         def func(x, P, fn=fn):
             return znp.asarray(fn(x, P), dtype=np.float64) * znp.ones_like(x)
-        return _pdf_types()["FormulaPDF"](self.space, params, func, name=self._name(base))
+        return _pdf_types()["FormulaPDF"](self.space, params, func, eps=eps, name=self._name(base))
 
     def _addpdf(self, p, what):
         import zfit
@@ -557,6 +648,146 @@ class Translator:
         return _pdf_types()["HistStepPDF"](self.space, edges, contents, name=self._name("hist"))
 
 
+# ----------------------------------------------------------------------------------------
+# un-normalised RooFit pdf values (VerticalInterpPdf morphs these)
+# ----------------------------------------------------------------------------------------
+
+RAW_PDF_CLASSES = ("RooGaussian", "RooExponential", "RooPolynomial", "RooUniform", "RooGenericPdf", "RooLandauCB")
+
+
+@dataclass
+class RawPdf:
+    """A RooAbsPdf without normalisation: ``value(x, P)`` = RooAbsPdf::getVal() with no
+    normalisation set (``evaluate()``), ``integral(lower, upper, P)`` = its RooFit integral
+    (``createIntegral``: the class's analytic integral, or RooIntegrator1D emulated by
+    roo_integrate for classes RooFit integrates numerically).  ``leaves``: IR parameters."""
+
+    value: Callable
+    integral: Callable
+    leaves: Set[str] = field(default_factory=set)
+    cls: str = ""
+
+
+def _gaussian_integral(lower, upper, mean, sigma):
+    """RooFit::Detail::AnalyticalIntegrals::gaussianIntegral (erfc in the upper tail)."""
+    import zfit.z.numpy as znp
+    import tensorflow as tf
+
+    scale = 0.5 * math.sqrt(2.0 * math.pi) * sigma
+    xs = math.sqrt(2.0) * sigma
+    smin = (lower - mean) / xs
+    smax = (upper - mean) / xs
+    ecmin = tf.math.erfc(znp.abs(smin))
+    ecmax = tf.math.erfc(znp.abs(smax))
+    cond = znp.where(smin * smax < 0.0, 2.0 - (ecmin + ecmax), znp.where(smax <= 0.0, ecmax - ecmin, ecmin - ecmax))
+    return scale * cond
+
+
+def _raw_translate(tr, p) -> RawPdf:
+    """RawPdf of ``p`` for the classes in RAW_PDF_CLASSES (RooFit 6.32 evaluate/analyticalIntegral)."""
+    import zfit.z.numpy as znp
+
+    cls = p.ClassName()
+    what = f"{cls} '{p.GetName()}'"
+    if cls not in RAW_PDF_CLASSES:
+        raise UnsupportedByBackend(f"zmodel: shape systematics on the pdf {what}: the un-normalised values of "
+                                   f"{cls} are not implemented (supported: {', '.join(RAW_PDF_CLASSES)})")
+
+    def nox(sym, label):
+        if sym.depends_on_x:
+            raise UnsupportedByBackend(f"zmodel: {what} {label} depends on the observable")
+        return sym
+
+    def leaves(*syms):
+        return set().union(*[q.leaves for q in syms])
+
+    if cls == "RooGaussian":
+        x, mean = p.getX(), p.getMean()
+        if x.GetName() != tr.obs_name and mean.GetName() == tr.obs_name:
+            x, mean = mean, x
+        tr._obs_arg(x, what)
+        m, sg = nox(tr.sym(mean), "mean"), nox(tr.sym(p.getSigma()), "sigma")
+
+        def value(xv, P):
+            arg = xv - m.fn(None, P)
+            s = sg.fn(None, P)
+            return znp.exp(-0.5 * arg * arg / (s * s))
+
+        def integral(lo, hi, P):
+            return _gaussian_integral(lo, hi, m.fn(None, P), sg.fn(None, P))
+        return RawPdf(value, integral, leaves(m, sg), cls)
+    if cls == "RooExponential":
+        tr._obs_arg(p.variable(), what)
+        c = nox(tr.sym(p.coefficient()), "coefficient")
+        sign = -1.0 if p.negateCoefficient() else 1.0
+
+        def value(xv, P):
+            return znp.exp(sign * c.fn(None, P) * xv)
+
+        def integral(lo, hi, P):
+            k = sign * c.fn(None, P) + 0.0 * lo
+            safe = znp.where(k == 0.0, 1.0, k)
+            return znp.where(k == 0.0, hi - lo, (znp.exp(safe * hi) - znp.exp(safe * lo)) / safe)
+        return RawPdf(value, integral, leaves(c), cls)
+    if cls == "RooPolynomial":
+        tr._obs_arg(p.x(), what)
+        cs = [nox(tr.sym(c), "coefficient") for c in p.coefList()]
+        k = int(p.lowestOrder())
+
+        def value(xv, P):
+            val = 1.0 if k > 0 else 0.0
+            for i, c in enumerate(cs):
+                val = val + c.fn(None, P) * xv ** (k + i)
+            return val * znp.ones_like(xv)
+
+        def integral(lo, hi, P):
+            total = (hi - lo) if k > 0 else 0.0 * lo
+            for i, c in enumerate(cs):
+                q = k + i + 1
+                total = total + c.fn(None, P) * (hi ** q - lo ** q) / q
+            return total
+        return RawPdf(value, integral, leaves(*cs), cls)
+    if cls == "RooUniform":
+        xs = proxies(tr.R, p)["x"]
+        if len(xs) != 1:
+            raise UnsupportedByBackend(f"zmodel: {what} has {len(xs)} observables")
+        tr._obs_arg(xs[0], what)
+        return RawPdf(lambda xv, P: znp.ones_like(xv), lambda lo, hi, P: hi - lo + 0.0 * lo, set(), cls)
+    # numerically integrated classes: the same functions as the FormulaPDF translation
+    if cls == "RooGenericPdf":
+        s = tr._formula(str(p.expression()), [d for d in p.dependents()], what)
+    else:  # RooLandauCB
+        px = proxies(tr.R, p)
+        tr._obs_arg(px["x"], what)
+        parts = [nox(tr.sym(px[k]), k) for k in ("mean", "a", "b", "alpha1", "n1", "alpha2", "n2")]
+
+        def lfn(xv, P, parts=parts):
+            return landau_cb(xv, *[q.fn(xv, P) for q in parts])
+        s = Sym(fn=lfn, leaves=leaves(*parts), depends_on_x=True)
+    eps = roofit_int_config(tr.R, p)
+    fn = s.fn
+
+    def value(xv, P):
+        return znp.asarray(fn(xv, P), dtype=np.float64) * znp.ones_like(xv)
+
+    def integral(lo, hi, P):
+        return roo_integrate(lambda xs: value(xs, P), lo, hi, *eps)
+    return RawPdf(value, integral, set(s.leaves), cls)
+
+
+def roofit_raw_values(R, pdf, obs, xs):
+    """RooFit un-normalised values getVal() (no normalisation set) of ``pdf`` at ``xs``."""
+    old = obs.getVal()
+    out = []
+    try:
+        for x in xs:
+            obs.setVal(float(x))
+            out.append(pdf.getVal())
+    finally:
+        obs.setVal(old)
+    return np.array(out)
+
+
 def bin_integrals(pdf, obs_name, edges):
     """Normalised integrals of ``pdf`` over the bins ``edges``: ``pdf.integrate`` of each bin,
     vectorised with tf.vectorized_map.
@@ -592,15 +823,15 @@ def roofit_densities(R, pdf, obs, xs):
 
 
 def roofit_reference(R, pdf, obs_name, xs, edges, method="center"):
-    """RooFit reference values at the current parameter values, with every numerical
-    integral done precisely (adaptive Gauss-Kronrod, eps 1e-12) on a fresh clone of the
-    tree, so that RooFit's default integrator precision (~1e-7, worse for peaked pdfs) does
-    not enter the comparison.  Returns (densities, bin fractions, densities with RooFit's
-    default normalisation as used by Combine)."""
+    """RooFit values of ``pdf`` at the current parameter values: (densities, bin fractions)
+    with RooFit's default integrator configuration (what Combine uses, and what zmodel
+    reproduces), and (densities, bin fractions) with every numerical integral done precisely
+    (adaptive Gauss-Kronrod, eps 1e-12, on a fresh clone of the tree)."""
     from modelspec import rootinput
 
     obs = pdf.getVariables().find(obs_name)
     d_default = roofit_densities(R, pdf, obs, xs)
+    f_default = np.asarray(rootinput.binned_pdf_contents(pdf, obs, list(edges), method))
     cfg = R.RooAbsReal.defaultIntegratorConfig()
     saved = (cfg.epsAbs(), cfg.epsRel(), str(cfg.method1D().getCurrentLabel()))
     clone = pdf.cloneTree()
@@ -615,4 +846,4 @@ def roofit_reference(R, pdf, obs_name, xs, edges, method="center"):
         cfg.setEpsAbs(saved[0])
         cfg.setEpsRel(saved[1])
         cfg.method1D().setLabel(saved[2])
-    return dens, fracs, d_default
+    return d_default, f_default, dens, fracs

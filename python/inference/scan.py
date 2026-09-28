@@ -114,3 +114,97 @@ def fit_summary(lik, fit, data) -> dict:
         d = np.sqrt(np.clip(np.diag(cov), 1e-300, None))
         out["correlation"] = {"names": fit.cov_names, "matrix": (cov / np.outer(d, d)).tolist()}
     return out
+
+
+# ----------------------------------------------------------------------------------------
+# 2D scans (MultiDimFit --algo grid with two -P parameters)
+# ----------------------------------------------------------------------------------------
+
+# 2*DeltaNLL thresholds for 68.27% and 95% regions in two parameters (chi2 with 2 dof)
+LEVELS_2D = {"68": 2.295748928898636, "95": 5.991464547107979}
+
+
+def grid_axes_2d(ranges, points: int):
+    """Combine's 2D grid: ceil(sqrt(points)) points per axis at the centres of equal intervals."""
+    n = int(math.ceil(math.sqrt(points)))
+    return [grid_points(lo, hi, n) for lo, hi in ranges]
+
+
+def profile_scan_2d(lik, fitter, data, params, xs, ys, free=None) -> dict:
+    """2*DeltaNLL on the grid xs x ys (every other parameter profiled), relative to the free fit.
+
+    Points are fitted in order of their distance from the best fit (in units of the scan
+    ranges); each starts from the parameter values of the nearest point already fitted, so the
+    fits follow the valley of the likelihood.  A failed fit is retried from the best fit before
+    the point is reported invalid (None, flagged)."""
+    px, py = params
+    for p in params:
+        if p not in lik.index:
+            raise KeyError(f"unknown parameter '{p}'")
+    if px == py:
+        raise ValueError("a 2D scan needs two different parameters")
+    free = free or fitter.fit(data)
+    if not free.valid:
+        raise RuntimeError(f"free fit failed: {free.status}")
+    best = np.array([free.value(lik, px), free.value(lik, py)])
+    xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+    span = np.array([max(np.ptp(xs), 1e-12), max(np.ptp(ys), 1e-12)])
+    coords = np.array([(x, y) for x in xs for y in ys])            # Combine's order: x outer, y inner
+    order = np.argsort(np.linalg.norm((coords - best) / span, axis=1), kind="stable")
+    done_xy, done_vals = [], []
+    results = [None] * len(coords)
+    for k in order:
+        x, y = coords[k]
+        start = free.values
+        if done_xy:
+            d = np.linalg.norm((np.array(done_xy) - coords[k]) / span, axis=1)
+            start = done_vals[int(np.argmin(d))]
+        fixed = {px: float(x), py: float(y)}
+        res = fitter.fit(data, start=start, fixed=fixed)
+        if not res.valid:
+            res = fitter.fit(data, start=free.values, fixed=fixed)
+        results[k] = {"x": float(x), "y": float(y), "deltaNLL2": 2.0 * (res.nll - free.nll) if res.valid else None,
+                      "valid": res.valid, "status": res.status}
+        if res.valid:
+            done_xy.append(coords[k])
+            done_vals.append(res.values)
+    out = {"params": [px, py], "best_fit": best.tolist(), "nll_min": free.nll,
+           "axes": [xs.tolist(), ys.tolist()], "points": results, "flags": []}
+    bad = [(p["x"], p["y"]) for p in results if not p["valid"]]
+    if bad:
+        out["flags"].append(f"{len(bad)} scan fits failed, e.g. at {bad[:3]}")
+    if any(p["valid"] and p["deltaNLL2"] < -1e-3 for p in results):
+        out["flags"].append("a scan point has a lower NLL than the best fit; the free fit is not the global minimum")
+    z = np.full((len(xs), len(ys)), np.nan)
+    for i, p in enumerate(results):
+        if p["valid"]:
+            z[i // len(ys), i % len(ys)] = p["deltaNLL2"]
+    out["contours"] = {}
+    for key, level in LEVELS_2D.items():
+        lines = contour_lines(xs, ys, z, level)
+        entry = {"level": level, "lines": [ln.tolist() for ln in lines]}
+        if lines:
+            allp = np.vstack(lines)
+            entry["x_range"] = [float(allp[:, 0].min()), float(allp[:, 0].max())]
+            entry["y_range"] = [float(allp[:, 1].min()), float(allp[:, 1].max())]
+            closed = all(np.allclose(ln[0], ln[-1]) for ln in lines)
+            if not closed:
+                out["flags"].append(f"{key}% contour is not closed inside the scan range; widen --range")
+        else:
+            out["flags"].append(f"no {key}% contour inside the scan range")
+        out["contours"][key] = entry
+    inside = int(np.sum(z < LEVELS_2D["68"]))
+    if inside < 4:
+        out["flags"].append(f"only {inside} grid points inside the 68% region; the contours are coarse, "
+                            "use more points or a narrower --range")
+    return out
+
+
+def contour_lines(xs, ys, z, level):
+    """Contour lines of z[i, j] (at xs[i], ys[j]) at ``level``, linear interpolation between grid
+    points (contourpy, the library under matplotlib's contour).  Invalid points are masked."""
+    import contourpy
+
+    zm = np.ma.masked_invalid(np.asarray(z, dtype=float).T)        # contourpy wants z[y, x]
+    gen = contourpy.contour_generator(np.asarray(xs), np.asarray(ys), zm, line_type=contourpy.LineType.Separate)
+    return [np.asarray(ln) for ln in gen.lines(level)]

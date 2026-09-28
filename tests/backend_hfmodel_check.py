@@ -279,6 +279,55 @@ def template_theta_check(model, lik, label):
     return worst
 
 
+def mcstats_check(workdir, npoints):
+    """autoMCStats (examples/mcstats): hfmodel vs the oracle.  Exact when the template kappas
+    are symmetric (normsys code1 = asymPow); the BB-lite terms are applied in numpy, so pyhf's
+    own logpdf is not compared.  Export must be refused."""
+    import shutil
+    import subprocess
+
+    dest = os.path.join(workdir, "mcstats")
+    os.makedirs(dest, exist_ok=True)
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples", "mcstats")
+    for f in ("card.txt", "make_inputs.py"):
+        shutil.copy(os.path.join(src, f), dest)
+    subprocess.run([sys.executable, "make_inputs.py"], cwd=dest, check=True, capture_output=True)
+    cwd = os.getcwd()
+    os.chdir(dest)
+    try:
+        model = build_ir("card.txt")
+    finally:
+        os.chdir(cwd)
+    for ch in model.channels:
+        for proc in ch.processes:
+            for s in proc.shape.systs:
+                ku, kd = sum(s.up) / sum(proc.shape.contents), sum(s.down) / sum(proc.shape.contents)
+                s.down = list(np.asarray(s.down) / (ku * kd))
+    lik = get_backend("hfmodel").build_likelihood(model, None)
+    ref = SemanticLikelihood(model)
+    rng = np.random.default_rng(3)
+    obs = observed_dataset(model)
+    worst_y = worst_nll = 0.0
+    for v in random_points(lik, rng, npoints):
+        e_hf, e_ref = lik.expected_by_process(v), ref.expected_by_process(v)
+        for ch in e_ref:
+            for p in e_ref[ch]:
+                worst_y = max(worst_y, float(np.max(np.abs(e_hf[ch][p] - e_ref[ch][p])
+                                                    / np.maximum(np.abs(e_ref[ch][p]), 1e-12))))
+        for data in (obs, random_dataset(model, lik, v, rng)):
+            worst_nll = max(worst_nll, abs(lik.nll_main(v, lik.native(data)) - ref.nll_main(v, ref.prepare(data))))
+    ok = worst_y < 1e-9 and worst_nll < 1e-8
+    print(f"[{'OK' if ok else 'FAIL'}] mcstats (symmetric kappas) {npoints} points: max rel yield diff "
+          f"{worst_y:.3g}, max |dNLL_main| {worst_nll:.3g}")
+    try:
+        get_backend("hfmodel").export(model, os.path.join(dest, "x.json"), None)
+        print("[FAIL] export of an autoMCStats model was not refused")
+        ok = False
+    except UnsupportedByBackend as err:
+        print(f"[OK] export refused: {err}")
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--workdir", default=None)
@@ -319,6 +368,7 @@ def main():
             print(f"[OK] gmN on two processes refused: {err}")
     finally:
         os.chdir(cwd)
+    all_ok &= mcstats_check(workdir, args.points)
     for card in args.card:
         model = build_ir(card)
         ok, lik = compare(model, os.path.basename(card), False, args.points)

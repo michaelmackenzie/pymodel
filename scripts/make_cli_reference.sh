@@ -8,7 +8,7 @@ OUT="$REPO/docs/cli-reference.md"
     echo
     echo 'Generated from `--help` for roomodel; the other backends differ only in their'
     echo 'backend-specific options. Regenerate with `scripts/make_cli_reference.sh`.'
-    for c in build inspect nll fit scan limit fc significance generate export; do
+    for c in build inspect nll fit scan impacts limit fc significance generate merge export; do
         echo
         echo "## \`$c\`"
         echo

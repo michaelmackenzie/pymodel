@@ -24,7 +24,7 @@ workspace JSON, or a RooWorkspace with a ModelConfig.
 | TH1 / RooDataHist templates | `shape:template` | ✓ | ✓ | ✓ |
 | RooAbsPdf, fixed parameters | `shape:parametric(-histogram)` | ✓ | ✓ | ✓ |
 | RooAbsPdf, floating parameters | `shape:parametric` | ✓ | ✓ (class map) | — |
-| RooMultiPdf + `discrete` | `shape:envelope`, `discrete` | ✓ | — | — |
+| RooMultiPdf + `discrete` | `shape:envelope`, `discrete` | ✓ | ✓ | — |
 | unbinned (RooDataSet) data, weighted or not | `data:unbinned`, `data:weighted` | ✓ | ✓ | — |
 | `<pdf>_norm` RooRealVar | `norm:rate_param` | ✓ | ✓ | ✓ |
 | `<pdf>_norm` function | `norm:ws_norm` | ✓ | ✓ (formula/product) | — |
@@ -35,13 +35,18 @@ workspace JSON, or a RooWorkspace with a ModelConfig.
 | `rateParam` value / `[range]` | `norm:rate_param` | ✓ | ✓ | ✓ |
 | `rateParam` formula | `norm:formula` | ✓ | ✓ | — |
 | `shape` (histograms) | `syst:shape` | ✓ | ✓ | ✓ (pyhf interpolation) |
-| `shapeN` | `syst:shapeN` | ✓ | — | — |
-| `shape` on RooAbsPdfs (pdf morphing) | `syst:pdf-morph` | — | — | — |
+| `shapeN` | `syst:shapeN` | ✓ | ✓ | — |
+| `shape` on RooHistPdfs (fixed; FastVerticalInterpHistPdf2) | `syst:histpdf-morph` | ✓ | ✓ | ✓ (pyhf interpolation) |
+| `shape` on other RooAbsPdfs (VerticalInterpPdf), fixed parameters | `syst:pdf-morph` | ✓ | ✓ (binned) | — |
+| `shape` on RooAbsPdfs with floating parameters / unbinned data | `syst:pdf-morph` | ✓ | ✓ (RooGaussian, RooExponential, RooPolynomial, RooUniform, RooGenericPdf, RooLandauCB) | — |
+| `shapeN` on RooAbsPdfs | `syst:pdf-morphN`, `syst:histpdf-morphN` | ✓ (pdf-morphN: Combine library, binned) | histpdf-morphN only | — |
 | `param m σ` / `m -σl/+σh` / `[range]` | `constraint:gauss` / `bifurgauss` | ✓ | ✓ | centre 0, σ 1 only |
 | `flatParam`, `extArg` (value) | free / constant parameter | ✓ | ✓ | ✓ |
 | `group`, `nuisance edit` (incl. `freeze`) | handled by the parser | ✓ | ✓ | ✓ |
-| `autoMCStats` | — | — | — | — |
-| multi-dimensional data_obs | — | — | — | — |
+| `autoMCStats` (TH1 channels, hist-mode 1) | `mcstats:bb-lite` | ✓ | ✓ | ✓ (BB-lite terms in numpy; no export) |
+| multi-dimensional data_obs (2D/3D RooDataHist or RooDataSet; RooHistPdfs, RooAbsPdfs, RooDataHist templates over the same variables) | `obs:multidim` | ✓ | — | ✓ (fixed binned shapes) |
+| shape systematics in multi-dimensional channels | refused (Combine's text2workspace fails on 2D RooHistPdf variations) | — | — | — |
+| TH2/TH3 histograms in `shapes` lines | refused (Combine accepts only TH1) | — | — | — |
 
 `pymodel <backend> inspect card.txt` shows how a card was interpreted: channels, per-process
 expected yields, parameters with their roles and constraints, and notes. Notes point out

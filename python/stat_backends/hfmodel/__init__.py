@@ -22,9 +22,11 @@ class HFBackend(Backend):
     supported_features = frozenset({
         "data:count", "data:binned",
         "shape:counting", "shape:template", "shape:parametric", "shape:parametric-histogram",
-        "syst:shape",
+        "syst:shape", "syst:histpdf-morph",
         "norm:lnN", "norm:asym_lnN", "norm:rate_param", "norm:gmN",
         "constraint:gauss", "constraint:poisson",
+        "mcstats:bb-lite",
+        "obs:multidim",  # N-D binned channels are pyhf channels over the flattened bins
     })
 
     def runtime_versions(self):
@@ -40,6 +42,9 @@ class HFBackend(Backend):
         """Write a pyhf JSON workspace plus ``<stem>_settings.json`` (interpolation codes,
         parameter map and notes, which the pyhf workspace format cannot hold)."""
         pyhf = import_pyhf()
+        if any(ch.mcstats is not None for ch in model.channels):
+            raise UnsupportedByBackend("hfmodel export: autoMCStats (Barlow-Beeston-lite) is applied outside pyhf; "
+                                       "a pyhf workspace cannot represent Combine's additive per-bin terms exactly")
         lik = HFLikelihood(model)
         if model.poi not in lik.spec.links:
             raise UnsupportedByBackend("hfmodel export: the model has no signal process, so no POI modifier")

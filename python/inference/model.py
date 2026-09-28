@@ -150,7 +150,14 @@ class Likelihood(ABC):
 
     # ----- shared --------------------------------------------------------------------
     def expected_counts(self, values: np.ndarray) -> Dict[str, np.ndarray]:
-        return {ch: np.sum(list(procs.values()), axis=0) for ch, procs in self.expected_by_process(values).items()}
+        """Total expected yields per bin.  autoMCStats channels are floored at 1e-9 per bin, as
+        Combine's CMSHistErrorPropagator does (their per-process yields sum to the unfloored
+        total, see semantics.bb_lite_expected)."""
+        out = {ch: np.sum(list(procs.values()), axis=0) for ch, procs in self.expected_by_process(values).items()}
+        for ch in self.model.channels:
+            if ch.mcstats is not None:
+                out[ch.name] = np.maximum(out[ch.name], 1e-9)
+        return out
 
     def native(self, data: Dataset):
         key = id(self)

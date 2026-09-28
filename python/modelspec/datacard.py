@@ -112,6 +112,14 @@ class _ShapeResolver:
 # IR construction
 # ----------------------------------------------------------------------------------------
 
+def _require_th1(obj, spec, b, p):
+    if obj.GetDimension() != 1:
+        raise UnsupportedFeature(
+            f"{spec} ({b}/{p}) is a {obj.ClassName()}: Combine's ShapeTools accepts only TH1 histograms in shapes lines "
+            "(text2workspace fails with 'This method currently supports only TH1s, RooDataHists and RooAbsPdfs'). "
+            "Unroll it into a TH1, or put a RooDataHist/RooHistPdf over the N observables in a RooWorkspace")
+
+
 def _gauss_nuisance(name, lo, hi, origin):
     return I.Parameter(name=name, value=0.0, lo=lo, hi=hi, role=I.ROLE_NUISANCE,
                        constraint=I.Constraint(kind=I.CONSTRAINT_GAUSS, center=0.0), origin=origin)
@@ -134,6 +142,8 @@ class _Builder:
         self.bin_integration = bin_integration
         self.shape_systs = {}  # name -> pdf type for shape* lines
         self.ws_params: Dict[str, object] = {}  # workspace parameter name -> RooRealVar (first seen)
+        self.th1_procs = set()  # (channel, process) whose nominal shape is a TH1
+        self._mcstats_group: List[str] = []  # autoMCStats parameters (Combine's group_autoMCStats)
 
     # -- parameters -------------------------------------------------------------------
     def add_param(self, par: I.Parameter):
@@ -161,8 +171,6 @@ class _Builder:
     # -- channels ---------------------------------------------------------------------
     def build(self) -> I.ModelIR:
         dc = self.dc
-        if dc.binParFlags:
-            raise UnsupportedFeature("autoMCStats is not supported yet")
         if dc.extArgs:
             for name, fields in dc.extArgs.items():
                 self._ext_arg(name, fields)
@@ -180,12 +188,15 @@ class _Builder:
         channels = [self._channel(b) for b in dc.bins]
         self._systematics(channels)
         self._rate_params(channels)
+        self._mcstats(channels)
         self._discretes()
         for name in dc.frozenNuisances:
             if name not in self.params:
                 raise UnsupportedFeature(f"'nuisance edit freeze' of unknown parameter '{name}'")
             self.params[name].role = I.ROLE_CONSTANT
         groups = {g: sorted(members) for g, members in dc.groups.items()}
+        if self._mcstats_group:
+            groups["autoMCStats"] = list(self._mcstats_group)  # Combine's group_autoMCStats
         self._check_unused_params(channels)
         return I.ModelIR(channels=channels, parameters=self.params, poi="r", groups=groups,
                          source=self.card_path, notes=self.notes)
@@ -233,15 +244,14 @@ class _Builder:
 
         obj, path, ws, spec = nominal
         if obj.InheritsFrom("TH1"):
+            _require_th1(obj, spec, b, "data_obs")
             edges = R.th1_edges(obj)
             counts, _ = R.th1_contents(obj)
             obs = I.Observable(name=f"CMS_th1x_{b}", lo=edges[0], hi=edges[-1], edges=edges)
             return obs, I.ChannelData(kind="binned", counts=counts), None, None
         if obj.InheritsFrom("RooAbsData"):
             if obj.get().getSize() != 1:
-                names = [v.GetName() for v in obj.get()]
-                raise UnsupportedFeature(f"data_obs of channel '{b}' has {len(names)} observables {names}; "
-                                         "only 1D channels are supported")
+                return self._data_nd(b, obj, path, ws, spec)
             var = obj.get().first()
             ws_obj = R.get_workspace(path, ws)
             var = ws_obj.var(var.GetName())
@@ -255,6 +265,51 @@ class _Builder:
             return obs, I.ChannelData(kind="unbinned", values=values, weights=weights), var, obs_ref
         raise UnsupportedFeature(f"data_obs '{spec}' of channel '{b}' is a {obj.ClassName()}")
 
+    def _data_nd(self, b, obj, path, ws, spec):
+        """data_obs over N >= 2 variables: the channel observable is their product binning
+        (flattened row-major in the order of the data_obs variables, ir.Observable)."""
+        from modelspec import rootinput as R
+
+        names = [v.GetName() for v in obj.get()]
+        if not all(v.InheritsFrom("RooRealVar") for v in obj.get()):
+            raise UnsupportedFeature(f"data_obs '{spec}' of channel '{b}' has non-real observables {names}")
+        if len(names) > 3:
+            raise UnsupportedFeature(f"data_obs of channel '{b}' has {len(names)} observables {names}; Combine's "
+                                     "toy and Asimov generation (SinglePdfGenInfo::generateWithHisto) supports at most 3")
+        ws_obj = R.get_workspace(path, ws)
+        variables = [ws_obj.var(n) for n in names]
+        axes = [I.Axis(name=v.GetName(), lo=v.getMin(), hi=v.getMax(), edges=R.var_edges(v)) for v in variables]
+        obs = I.Observable.multi(axes)
+        self.notes.append(f"channel {b}: {len(names)}-dimensional observable ({', '.join(names)}) with "
+                          f"{' x '.join(str(k) for k in obs.shape)} = {obs.nbins} bins")
+        if obj.InheritsFrom("RooDataHist"):
+            try:
+                counts, _ = R.datahist_contents_nd(obj, variables, obs)
+            except ValueError as err:
+                raise UnsupportedFeature(f"data_obs of channel '{b}': {err}") from err
+            return obs, I.ChannelData(kind="binned", counts=counts), variables, None
+        values, weights = R.dataset_values_nd(obj, names)
+        return obs, I.ChannelData(kind="unbinned", values=values, weights=weights), variables, None
+
+    def _check_pdf_observables(self, b, p, spec, obj, observable: I.Observable, obs_var):
+        """A RooHistPdf depends only on its observables: all of them must be axes of the channel
+        (with a 1D data_obs Combine would treat the other ones as floating parameters).  In an
+        N-D channel every pdf must depend on every axis (RooFit does not normalise a pdf over an
+        axis it does not depend on, so its density would carry the axis range as a factor)."""
+        axes = [a.name for a in observable.axis_list()]
+        if obj.InheritsFrom("RooHistPdf"):
+            extra = sorted(v.GetName() for v in obj.getVariables() if v.GetName() not in axes)
+            if extra:
+                raise UnsupportedFeature(
+                    f"the RooHistPdf '{spec}' of {b}/{p} is defined over {extra + axes} but data_obs of channel '{b}' "
+                    f"only over {axes}: Combine would treat {extra} as floating parameters of the pdf. Use a data_obs "
+                    f"over all of {extra + axes}")
+        if observable.ndim > 1:
+            missing = [v.GetName() for v in obs_var if not obj.dependsOn(v)]
+            if missing:
+                raise UnsupportedFeature(f"the pdf '{spec}' of {b}/{p} does not depend on the observable(s) {missing} "
+                                         f"of the {observable.ndim}-dimensional channel '{b}'")
+
     def _process(self, b, p, observable: I.Observable, obs_var) -> I.Process:
         from modelspec import rootinput as R
 
@@ -265,9 +320,22 @@ class _Builder:
         norm_terms: List[I.NormTerm] = []
         if obj.InheritsFrom("TH1") or obj.InheritsFrom("RooDataHist"):
             if obj.InheritsFrom("TH1"):
+                _require_th1(obj, spec, b, p)
+                if observable.ndim > 1:
+                    raise UnsupportedFeature(f"TH1 template {spec} of {b}/{p} in the {observable.ndim}-dimensional "
+                                             f"channel '{b}' (Combine would add a separate CMS_th1x observable)")
+                self.th1_procs.add((b, p))
                 if not np.allclose(R.th1_edges(obj), observable.edges):
                     raise UnsupportedFeature(f"template {spec} binning differs from data_obs in channel {b}")
                 contents, sumw2 = R.th1_contents(obj)
+            elif observable.ndim > 1:
+                try:
+                    contents, sumw2 = R.datahist_contents_nd(obj, obs_var, observable)
+                except ValueError as err:
+                    raise UnsupportedFeature(f"template {spec} of {b}/{p}: {err}") from err
+                if self._has_shape_systs(b, p):
+                    raise UnsupportedFeature(f"shape systematics on the {observable.ndim}-dimensional RooDataHist "
+                                             f"template {b}/{p} are not supported")
             else:
                 contents, sumw2 = R.datahist_contents(obj, obs_var, observable.edges)
             if rate == -1:
@@ -281,6 +349,7 @@ class _Builder:
             raise UnsupportedFeature(f"parametric shape '{spec}' in channel {b} needs RooFit data_obs")
         if rate == -1:
             raise UnsupportedFeature(f"rate -1 is not allowed for the parametric shape {b}/{p}")
+        self._check_pdf_observables(b, p, spec, obj, observable, obs_var)
         ws_obj = R.get_workspace(path, ws)
         ref = I.RooRef(file=path, workspace=ws, name=obj.GetName(), class_name=obj.ClassName())
         fparams = R.floating_params(obj, obs_var)
@@ -295,8 +364,17 @@ class _Builder:
                             category=cats[0].GetName())
         else:
             shape = I.Shape(kind="parametric", ref=ref, params=[v.GetName() for v in fparams])
-            if not fparams:
+            if observable.ndim > 1 and self._has_shape_systs(b, p):
+                raise UnsupportedFeature(
+                    f"shape systematics on the pdf {b}/{p} of the {observable.ndim}-dimensional channel '{b}': Combine's "
+                    "text2workspace fails on 2D RooHistPdf variations (ShapeTools.getPdf calls RooArgSet.second(), "
+                    "which PyROOT does not provide), and VerticalInterpPdf morphing of N-D pdfs is not supported yet")
+            variations = self._pdf_systs(b, p, obj, shape, obs_var)
+            if not shape.params and observable.ndim > 1:
+                shape.contents = R.binned_pdf_contents_nd(obj, obs_var, observable, self.bin_integration)
+            elif not shape.params:
                 shape.contents = R.binned_pdf_contents(obj, obs_var, observable.edges, self.bin_integration)
+                self._fixed_pdf_systs(shape, obj, variations, obs_var, observable)
         norm = ws_obj.arg(obj.GetName() + "_norm")
         if norm:
             if norm.InheritsFrom("RooRealVar"):
@@ -316,17 +394,85 @@ class _Builder:
                                                               class_name=norm.ClassName())))
                 else:
                     rate *= norm.getVal()
+        if shape.kind == "envelope" and self._has_shape_systs(b, p):
+            raise UnsupportedFeature(f"shape systematics on the RooMultiPdf {b}/{p} are not supported")
+        return I.Process(name=p, is_signal=is_signal, rate=rate, shape=shape, norm_terms=norm_terms)
+
+    def _has_shape_systs(self, b, p) -> bool:
+        return any(self._entry(syst, b, p) != 0 and not (pdf.endswith("?") and
+                                                         not self.shapes.systematic_exists(b, p, syst))
+                   for syst, pdf in self.shape_systs.items())
+
+    def _pdf_systs(self, b, p, nominal, shape: I.Shape, obs_var):
+        """Fill ``shape.pdf_systs`` / ``pdf_morph`` of a RooAbsPdf shape (ShapeTools.getPdf):
+        a RooHistPdf nominal is morphed by FastVerticalInterpHistPdf2, any other pdf by
+        VerticalInterpPdf.  Returns [(PdfSyst, up pdf, down pdf)].  Combine reads no ``_norm``
+        of the Up/Down pdfs (getShape only looks for the nominal one) and adds no normalisation
+        term for RooAbsPdf shapes (getExtraNorm)."""
+        from modelspec import rootinput as R
+
+        out, algos, ignored = [], set(), []
         for syst, pdf in self.shape_systs.items():
-            if self._entry(syst, b, p) == 0:
+            scale = self._entry(syst, b, p)
+            if scale == 0:
                 continue
             if pdf.endswith("?") and not self.shapes.systematic_exists(b, p, syst):
                 continue
-            up = self.shapes.systematic(b, p, syst, "Up")
-            down = self.shapes.systematic(b, p, syst, "Down")
-            shape.syst_refs[syst] = [I.RooRef(file=up[1], workspace=up[2], name=up[0].GetName(), class_name=up[0].ClassName()),
-                                     I.RooRef(file=down[1], workspace=down[2], name=down[0].GetName(),
-                                              class_name=down[0].ClassName())]
-        return I.Process(name=p, is_signal=is_signal, rate=rate, shape=shape, norm_terms=norm_terms)
+            algo = pdf.rstrip("?")
+            if algo not in ("shape", "shapeN"):
+                raise UnsupportedFeature(f"systematic type '{pdf}' is not supported on the pdf {b}/{p}")
+            algos.add(algo)
+            shape_name = self.dc.systematicsShapeMap.get((syst, b, p), syst)
+            objs, refs = [], []
+            for direction in ("Up", "Down"):
+                obj, path, ws, spec = self.shapes.systematic(b, p, shape_name, direction)
+                if obj.ClassName() != nominal.ClassName():
+                    raise UnsupportedFeature(f"{spec} for {b}/{p} is a {obj.ClassName()}, the nominal pdf is a "
+                                             f"{nominal.ClassName()} (Combine: mismatched shape types)")
+                if R.get_workspace(path, ws).arg(obj.GetName() + "_norm"):
+                    ignored.append(obj.GetName() + "_norm")
+                for v in R.floating_params(obj, obs_var):
+                    self.add_workspace_param(v, path, ws)
+                    if v.GetName() not in shape.params:
+                        shape.params.append(v.GetName())
+                objs.append(obj)
+                refs.append(I.RooRef(file=path, workspace=ws, name=obj.GetName(), class_name=obj.ClassName()))
+            out.append((I.PdfSyst(param=syst, up=refs[0], down=refs[1], scale=float(scale), kind=algo), *objs))
+        if ignored:
+            self.notes.append(f"{b}/{p}: {', '.join(ignored)} ignored (Combine uses only the nominal _norm: a shape "
+                              "systematic on a pdf has no normalisation effect)")
+        if not out:
+            return out
+        if len(algos) > 1:
+            raise UnsupportedFeature(f"{b}/{p} mixes the morphing algorithms {sorted(algos)} (Combine allows one "
+                                     "per shape)")
+        if nominal.InheritsFrom("RooParametricHist") or nominal.InheritsFrom("RooMultiPdf"):
+            raise UnsupportedFeature(f"shape systematics on the {nominal.ClassName()} {b}/{p} are not supported")
+        if nominal.InheritsFrom("RooHistPdf"):
+            if nominal.dataHist().get().getSize() != 1:
+                raise UnsupportedFeature(f"shape systematics on the multi-dimensional RooHistPdf {b}/{p}")
+            if shape.params:
+                raise UnsupportedFeature(f"RooHistPdf shape systematics of {b}/{p} depend on floating parameters "
+                                         f"{shape.params} (Combine's FastVerticalInterpHistPdf2 refuses them)")
+            shape.pdf_morph = I.PDF_MORPH_HIST
+        else:
+            shape.pdf_morph = I.PDF_MORPH_VERTICAL
+        shape.pdf_systs = [o[0] for o in out]
+        return out
+
+    def _fixed_pdf_systs(self, shape: I.Shape, nominal, variations, obs_var, observable):
+        """Binned contents (and un-normalised integrals) of fixed pdfs and their variations."""
+        from modelspec import rootinput as R
+
+        if not variations:
+            return
+        nset = R.root().RooArgSet(obs_var)
+        shape.raw_integral = float(nominal.createIntegral(nset).getVal())
+        for syst, up, down in variations:
+            syst.up_contents = R.binned_pdf_contents(up, obs_var, observable.edges, self.bin_integration)
+            syst.down_contents = R.binned_pdf_contents(down, obs_var, observable.edges, self.bin_integration)
+            syst.up_integral = float(up.createIntegral(nset).getVal())
+            syst.down_integral = float(down.createIntegral(nset).getVal())
 
     def _entry(self, syst_name, b, p):
         for name, _nofloat, _pdf, _args, errline in self.dc.systs:
@@ -377,7 +523,7 @@ class _Builder:
             elif pdf.startswith("shape"):
                 par = self.add_param(_gauss_nuisance(name, -4.0, 4.0, "shape"))
                 used = any(s.param == name for ch in channels for proc in ch.processes for s in proc.shape.systs)
-                used |= any(name in proc.shape.syst_refs for ch in channels for proc in ch.processes)
+                used |= any(s.param == name for ch in channels for proc in ch.processes for s in proc.shape.pdf_systs)
                 if not used:
                     self.notes.append(f"shape systematic '{name}' has no effect on any process")
                 par.origin = pdf
@@ -508,6 +654,106 @@ class _Builder:
                 else:
                     raise UnsupportedFeature(f"rateParam '{spec[0]}' read from a ROOT file is not supported yet")
 
+    # -- autoMCStats -------------------------------------------------------------------
+    def _mcstats(self, channels):
+        """Channel.mcstats from ``<channel> autoMCStats threshold [include-signal] [hist-mode]``
+        (Combine ShapeTools.doIndividualModels + CMSHistErrorPropagator::setupBinPars)."""
+        from modelspec import semantics as S
+
+        for ch in channels:
+            flags = self.dc.binParFlags.get(ch.name)
+            if flags is None:
+                continue
+            threshold, include_signal, hist_mode = float(flags[0]), bool(flags[1]), int(flags[2])
+            if hist_mode != 1:
+                raise UnsupportedFeature(f"autoMCStats hist-mode {hist_mode} in channel '{ch.name}' is not supported "
+                                         "(only the default hist-mode 1)")
+            bad = [p.name for p in ch.processes if (ch.name, p.name) not in self.th1_procs]
+            if bad:
+                raise UnsupportedFeature(
+                    f"autoMCStats in channel '{ch.name}' with non-TH1 processes {bad}: Combine's "
+                    "CMSHistErrorPropagator needs a CMSHistFunc (TH1 template) for every process")
+            procs = []
+            for proc in ch.processes:
+                shape = proc.shape
+                if any(s.kind != "shape" for s in shape.systs):
+                    raise UnsupportedFeature(f"autoMCStats channel '{ch.name}': {proc.name} uses shapeN "
+                                             "(CMSHistFunc LogQuadLinear morphing is not supported)")
+                if proc.rate == 0.0:
+                    continue  # Combine drops processes with rate 0
+                integral = float(np.sum(shape.contents))
+                if integral <= 0.0:
+                    if any(w > 0 for w in shape.sumw2):
+                        raise UnsupportedFeature(f"autoMCStats channel '{ch.name}': template {proc.name} has zero "
+                                                 "integral but non-zero bin errors")
+                    self.notes.append(f"autoMCStats channel {ch.name}: {proc.name} has an empty template (yield 0)")
+                    proc.rate = 0.0
+                    continue
+                if abs(proc.rate - integral) > 1e-9 * max(1.0, integral):
+                    self.notes.append(f"autoMCStats channel {ch.name}: {proc.name} rate {proc.rate:g} replaced by the "
+                                      f"template integral {integral:g} (Combine normalises CMSHistFunc templates by "
+                                      "their own integral)")
+                proc.rate = integral
+                for t in proc.norm_terms:
+                    if t.kind == "gmN":
+                        n_obs = self.params[t.param].constraint.center
+                        # Combine: coefficient n / N (n for N = 0) times the raw template
+                        t.alpha = integral / n_obs if n_obs > 0 else integral
+                h0, snorm = S.cmshist_template(shape.contents, [(s.up, s.down, s.scale) for s in shape.systs],
+                                               [self.params[s.param].value for s in shape.systs])
+                c0 = self._nominal_norm(proc) * snorm / integral
+                procs.append((proc.name, proc.is_signal, c0, h0, np.sqrt(np.asarray(shape.sumw2, dtype=float))))
+            cfg = I.MCStats(threshold=threshold, include_signal=include_signal, hist_mode=hist_mode)
+            if threshold >= 0.0:
+                for j, kind, pname, n_eff, name in S.bb_lite_classify(ch.name, procs, threshold, include_signal):
+                    if name in self.params:
+                        raise UnsupportedFeature(f"autoMCStats parameter '{name}' clashes with an existing parameter")
+                    if kind == "poisson":
+                        lo, hi = S.poisson_bb_range(n_eff)
+                        par = I.Parameter(name=name, value=n_eff, lo=lo, hi=hi, role=I.ROLE_NUISANCE,
+                                          constraint=I.Constraint(kind=I.CONSTRAINT_POISSON, center=n_eff),
+                                          origin="autoMCStats")
+                    else:
+                        par = _gauss_nuisance(name, -S.BB_SIGMA_RANGE, S.BB_SIGMA_RANGE, "autoMCStats")
+                    self.params[name] = par
+                    cfg.params.append(I.MCStatsParam(bin=j, kind=kind, param=name, process=pname, n_eff=n_eff))
+            ch.mcstats = cfg
+            names = [bp.param for bp in cfg.params]
+            if names:
+                if "autoMCStats" in self.dc.groups:
+                    raise UnsupportedFeature("a nuisance group named 'autoMCStats' clashes with Combine's own group")
+                self._mcstats_group += names
+
+    def _nominal_norm(self, proc: I.Process) -> float:
+        """rate * r^[signal] * prod(norm terms) at the nominal parameter values."""
+        from modelspec import semantics as S
+
+        v = {n: p.value for n, p in self.params.items()}
+        f = 1.0 if any(t.kind == "gmN" for t in proc.norm_terms) else proc.rate
+        if proc.is_signal:
+            f *= v["r"]
+        for t in proc.norm_terms:
+            if t.kind in ("lnN", "lnU"):
+                f *= t.kappa_hi ** v[t.param]
+            elif t.kind == "asym_lnN":
+                f *= float(S.asym_pow(v[t.param], t.kappa_lo, t.kappa_hi))
+            elif t.kind == "gmN":
+                f *= t.alpha * v[t.param]
+            elif t.kind == "rate_param":
+                f *= v[t.param]
+            elif t.kind == "formula":
+                from modelspec import rootinput as R
+
+                ROOT = R.root()
+                args = ROOT.RooArgList()
+                keep = [ROOT.RooRealVar(a, a, v[a]) for a in t.args]
+                for a in keep:
+                    args.add(a)
+                f *= ROOT.RooFormulaVar(f"nominal_{t.param}", t.formula, args).getVal()
+            else:
+                raise UnsupportedFeature(f"autoMCStats: norm term '{t.kind}' on {proc.name}")
+        return f
+
     def _discretes(self):
         for name in self.dc.discretes:
             par = self.params.get(name)
@@ -523,9 +769,11 @@ class _Builder:
                     used.update(t.args)
                 used.update(s.param for s in proc.shape.systs)
                 used.update(proc.shape.params)
-                used.update(proc.shape.syst_refs)
+                used.update(s.param for s in proc.shape.pdf_systs)
                 if proc.shape.category:
                     used.add(proc.shape.category)
+            if ch.mcstats is not None:
+                used.update(bp.param for bp in ch.mcstats.params)
         for name, par in self.params.items():
             if name not in used:
                 self.notes.append(f"parameter '{name}' ({par.origin}) does not affect any process")

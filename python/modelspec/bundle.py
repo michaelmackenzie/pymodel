@@ -25,9 +25,9 @@ def _iter_refs(model: I.ModelIR):
         for proc in ch.processes:
             if proc.shape.ref is not None:
                 yield proc.shape, "ref", proc.shape.ref
-            for key, refs in proc.shape.syst_refs.items():
-                for i, ref in enumerate(refs):
-                    yield refs, i, ref
+            for syst in proc.shape.pdf_systs:
+                yield syst, "up", syst.up
+                yield syst, "down", syst.down
             for term in proc.norm_terms:
                 if term.ref is not None:
                     yield term, "ref", term.ref

@@ -24,7 +24,7 @@ Combine datacard + ROOT shapes
 | Reference formulas | `modelspec/semantics.py` | numpy ports of Combine's asymPow, smooth step and vertical morphing |
 | Backends | `stat_backends/<name>/` | `ModelIR` → `Likelihood`; each declares `supported_features`, and `build_likelihood` rejects models that use anything else |
 | Oracle | `inference/semantic_likelihood.py` | numpy `Likelihood` built from `semantics.py`; backends are tested against it |
-| Inference | `inference/*.py` | Fitter (iminuit), constraint terms and global observables, toy modes, q̃/t/q₀, AsymptoticLimits, HybridNew-style toy CLs and FC, significance, scans, result schema, plots |
+| Inference | `inference/*.py` | Fitter (iminuit), constraint terms and global observables, toy modes, q̃/t/q₀, AsymptoticLimits, HybridNew-style toy CLs and FC (adaptive toys, raw-result merging), significance, 1D/2D scans, impacts, per-toy seeds and the spawn process pool (`parallel.py`), result schema, plots |
 | CLI | `python/pymodel`, `python/pymodel_core.py`, `bin/*` | `pymodel <backend> <command> INPUT [options]` |
 
 ## Design rules

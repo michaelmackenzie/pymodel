@@ -1,0 +1,17 @@
+# TH2 histograms in shapes lines: Combine (ShapeTools.prepareAllShapes) supports only TH1s,
+# RooDataHists and RooAbsPdfs, so this card is refused by text2workspace and by pymodel.
+imax 1
+jmax 2
+kmax *
+------------------------------------------------------------------------
+shapes * * th2.root $PROCESS
+------------------------------------------------------------------------
+bin          sr
+observation  -1
+------------------------------------------------------------------------
+bin          sr     sr     sr
+process      sig    dio    cosmic
+process      0      1      2
+rate         -1     -1     -1
+------------------------------------------------------------------------
+lumi         lnN    1.10   1.10   -

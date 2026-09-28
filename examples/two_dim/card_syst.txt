@@ -1,0 +1,24 @@
+# card.txt plus shape systematics on the 2D RooHistPdfs.  Combine means FastVerticalInterpHistPdf2D2
+# (vertical morphing of the unit-normalised 2D histograms, no normalisation effect), but its
+# text2workspace fails on this card in the Combine version used here (ShapeTools.getPdf calls
+# RooArgSet.second(), which PyROOT does not provide), so pymodel refuses it too.
+imax 1
+jmax 2
+kmax *
+------------------------------------------------------------------------
+shapes data_obs * workspace.root w:data_obs
+shapes * * workspace.root w:$PROCESS_pdf w:$PROCESS_pdf_$SYSTEMATIC
+------------------------------------------------------------------------
+bin          sr
+observation  -1
+------------------------------------------------------------------------
+bin          sr     sr     sr
+process      sig    dio    cosmic
+process      0      1      2
+rate         5      20     10
+------------------------------------------------------------------------
+lumi         lnN    1.10   1.10   -
+dioN         lnN    -      1.05   -
+pscale       shape  1      1      -
+tslope       shape  -      -      1
+csm_scale    rateParam sr cosmic 1 [0,5]

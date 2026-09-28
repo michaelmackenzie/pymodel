@@ -40,6 +40,11 @@ See `docs/architecture.md`. In short:
    flag.
 6. **No legacy formats.** Inputs are Combine datacards with ROOT shapes, or bundles made by
    `build`.
+7. **Toys are seeded per toy.** Random numbers in toy code come from
+   `inference.parallel.ToySeeds` keys (stream, point, toy index, purpose), never from a shared
+   sequential generator. That is what makes `--jobs N` and merged split jobs bit-identical.
+   Work that runs in workers is a module-level task function that takes picklable tasks
+   (`portable(dataset)`).
 
 ## Validation
 ```bash

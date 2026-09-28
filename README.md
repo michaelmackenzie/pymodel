@@ -32,11 +32,13 @@ pymodel <backend> <command> INPUT [options]      # or: roomodel <command> ..., h
 
 | command | Combine equivalent | example |
 |---|---|---|
-| `limit` | AsymptoticLimits / HybridNew LHC-limits | `roomodel limit card.txt` · `roomodel limit card.txt --method toys --toys-per-point 1000` |
-| `fc` | HybridNew LHC-feldman-cousins | `roomodel fc card.txt --cl 0.9 --grid 0:4:17` |
-| `fit` | FitDiagnostics / MultiDimFit singles | `roomodel fit card.txt --minos r` · `roomodel fit card.txt -t 500 --expect-signal 1 --toys-frequentist` |
-| `scan` | MultiDimFit --algo grid | `roomodel scan card.txt --param r --points 50 --range 0:5` |
-| `significance` | Significance | `roomodel significance card.txt --method toys` |
+| `limit` | AsymptoticLimits / HybridNew LHC-limits | `roomodel limit card.txt` · `roomodel limit card.txt --method toys --toys-per-point 1000 -j 8` · adaptive: `--cls-acc 0.005 --r-abs-acc 0.02` |
+| `fc` | HybridNew LHC-feldman-cousins | `roomodel fc card.txt --cl 0.9 --grid 0:4:17` · adaptive: `--p-acc 0.01` |
+| `merge` | hadd + HybridNew --readHybridResults | `roomodel limit card.txt --method toys --grid 0.5:3:6 --toy-chunk 0/4 --save-toy-results c0.json` (one job per chunk), then `roomodel merge c*.json` |
+| `fit` | FitDiagnostics / MultiDimFit singles | `roomodel fit card.txt --minos r` · `roomodel fit card.txt -t 500 --expect-signal 1 --toys-frequentist -j 8` |
+| `scan` | MultiDimFit --algo grid (1 or 2 -P) | `roomodel scan card.txt --param r --points 50 --range 0:5` · 2D: `--param r,bkg_norm --points 400 --range 0:3,-2.5:2.5 --plot` |
+| `impacts` | combineTool.py -M Impacts (+ plotImpacts.py) | `roomodel impacts card.txt --plot -j 8` · expected: `-t -1 --expect-signal 1` |
+| `significance` | Significance | `roomodel significance card.txt --method toys -j 8` |
 | `generate` | GenerateOnly | `roomodel generate card.txt -t 100 --toys-out toys.json` |
 | `build` / `inspect` / `nll` / `export` | text2workspace | `roomodel build card.txt --bundle model.json` |
 
@@ -48,6 +50,9 @@ Common options include:
 
 The toy options follow Combine: `-t N`, `-t -1` (Asimov), `--expect-signal`,
 `--toys-frequentist`, `--bypass-frequentist-fit` and `--toys-no-systematics`.
+Every toy command takes `--jobs N` (`-j`): the toys run in N spawned worker processes, and the
+results are bit-identical for any N (each toy has its own seed derived from `--seed`, see
+`docs/statistics.md`).
 See `pymodel <backend> <command> --help`.
 
 Every command writes a JSON result (format described in `python/inference/results.py`).

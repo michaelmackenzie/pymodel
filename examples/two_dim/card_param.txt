@@ -1,0 +1,21 @@
+# 2D parametric signal (RooProdPdf of a Gaussian in p and an exponential in t0) whose momentum
+# depends on the param nuisance sig_pshift; the backgrounds are the 2D RooHistPdfs.
+imax 1
+jmax 2
+kmax *
+------------------------------------------------------------------------
+shapes data_obs * workspace.root w:data_obs
+shapes * * workspace.root w:$PROCESS_pdf
+------------------------------------------------------------------------
+bin          sr
+observation  -1
+------------------------------------------------------------------------
+bin          sr     sr     sr
+process      sigf   dio    cosmic
+process      0      1      2
+rate         5      20     10
+------------------------------------------------------------------------
+lumi         lnN    1.10   1.10   -
+dioN         lnN    -      1.05   -
+sig_pshift   param  0 1
+csm_scale    rateParam sr cosmic 1 [0,5]

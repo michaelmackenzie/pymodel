@@ -1,0 +1,22 @@
+# Two-channel TH1 template model with Barlow-Beeston-lite MC statistical uncertainties.
+imax 2
+jmax 3
+kmax *
+------------------------------------------------------------------------
+shapes * * mcstats.root $CHANNEL/$PROCESS $CHANNEL/$PROCESS_$SYSTEMATIC
+------------------------------------------------------------------------
+bin          ch1   ch2
+observation  -1    -1
+------------------------------------------------------------------------
+bin          ch1   ch1   ch1   ch2   ch2
+process      sig   bkg1  bkg2  sig   bkg
+process      0     1     2     0     3
+rate         -1    -1    -1    -1    -1
+------------------------------------------------------------------------
+lumi         lnN   1.025 1.025 1.025 1.025 1.025
+bkg1_norm    lnN   -     1.10  -     -     -
+bkg2_norm    lnN   -     -     1.20  -     -
+bkg_shape    shape -     -     -     -     1
+------------------------------------------------------------------------
+ch1 autoMCStats 10
+ch2 autoMCStats 5 1

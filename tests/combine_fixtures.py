@@ -14,9 +14,16 @@ Combine is run with fixed seeds:
 * MultiDimFit --algo grid (50 points on r) and --algo singles
 * FitDiagnostics (best fit, s+b and b-only fit results)
 * Significance (asymptotic)
+* for fixtures with ``nll_points``: Combine's own NLL (cacheutils::CachingSimNLL of model_s on
+  data_obs, constraint terms included) at that many seeded parameter points of the
+  text2workspace model, so the tests can compare NLL differences point by point
 * for fixtures with ``hybrid``: HybridNew --LHCmode LHC-limits and LHC-feldman-cousins at
   single r points (fixed number of toys, --clsAcc 0), then Combine's own grid readout
   (--readHybridResults --grid) of the limit / interval.
+
+Fixtures with ``measure`` run only that measurement: ``impacts`` (combineTool.py -M Impacts
+--robustFit 1, with a tight minimiser tolerance) or ``scan2d`` (MultiDimFit --algo grid with two
+-P parameters).
 
 Numbers are read from the higgsCombine*.root limit trees (and the HypoTestResults / the
 fitDiagnostics RooFitResults) with PyROOT and written to tests/fixtures/<name>.json with the
@@ -73,6 +80,24 @@ FIXTURES = {
                                   ["workspace_mumem_75_evt_r0104_funcs.root"]), grid=None),
     "mumep_40_env": dict(mumep=("combine_mumep_40_evt_r0104_env.txt",
                                 ["workspace_mumep_40_evt_r0104_env.root"]), grid=None, extra=ENVELOPE_OPTS),
+    # multi-dimensional (p, t0) channels: 2D RooHistPdfs / RooProdPdf, 2D RooDataHist / RooDataSet
+    "two_dim": dict(example="two_dim", card="card.txt", grid=(0.0, 5.0), nll_points=12),
+    "two_dim_param": dict(example="two_dim", card="card_param.txt", grid=(0.0, 5.0), nll_points=12),
+    "two_dim_unbinned": dict(example="two_dim", card="card_unbinned.txt", grid=(0.0, 5.0), nll_points=12),
+    # autoMCStats (Barlow-Beeston-lite): TH1 templates with low-statistics weighted MC
+    # bin_integrator: see patch_bin_integrator (Combine's autoMCStats normalisation is otherwise
+    # integrated numerically in this ROOT version and the fits fail)
+    "mcstats": dict(example="mcstats", card="card.txt", grid=(0.0, 4.0), bin_integrator=True),
+    # shape systematics on RooAbsPdfs (VerticalInterpPdf / FastVerticalInterpHistPdf2)
+    "pdf_shape_syst": dict(example="pdf_shape_syst", card="card.txt", grid=(0.0, 3.0)),
+    "pdf_shape_syst_histpdf": dict(example="pdf_shape_syst", card="card_histpdf.txt", grid=(0.0, 3.0)),
+    "pdf_shape_syst_floating": dict(example="pdf_shape_syst", card="card_floating.txt", grid=(0.0, 3.0)),
+    "pdf_shape_syst_unbinned": dict(example="pdf_shape_syst", card="card_unbinned.txt", grid=(0.0, 3.0)),
+    # impacts and 2D scans (measure=...): only that measurement is run (see produce_measure)
+    "counting_impacts": dict(example="counting", card="card.txt", measure="impacts", r_range=(-5.0, 5.0)),
+    "templates_impacts": dict(example="templates", card="card.txt", measure="impacts", r_range=(0.0, 20.0)),
+    "templates_scan2d": dict(example="templates", card="card.txt", measure="scan2d", params=("r", "bkg_norm"),
+                             ranges=((0.0, 3.0), (-2.5, 2.5)), points=400),
 }
 
 
@@ -106,7 +131,7 @@ class Runner:
         self.cwd, self.log = cwd, log
         self.commands = {}
 
-    def run(self, key, cmd):
+    def run(self, key, cmd, env=None):
         """Run a command (list), record it under ``key`` and fail loudly on a non-zero exit."""
         line = " ".join(shlex.quote(c) for c in cmd)
         self.commands[key] = line
@@ -114,7 +139,8 @@ class Runner:
         with open(self.log, "a") as handle:
             handle.write(f"\n### {key}: {line}\n")
             handle.flush()
-            proc = subprocess.run(cmd, cwd=self.cwd, stdout=handle, stderr=subprocess.STDOUT)
+            proc = subprocess.run(cmd, cwd=self.cwd, stdout=handle, stderr=subprocess.STDOUT,
+                                  env=None if env is None else dict(os.environ, **env))
         if proc.returncode != 0:
             raise RuntimeError(f"'{line}' failed with exit code {proc.returncode} (see {self.log})")
         return time.time() - t0
@@ -204,8 +230,101 @@ def prepare(name, cfg, workdir):
     return dest, os.path.join("datacards", card), os.path.join(MUMEP_CARDS, "datacards", card)
 
 
+def patch_bin_integrator(cwd, ws):
+    """Make RooFit integrate every CMSHistErrorPropagator/CMSHistSum with RooBinIntegrator over
+    the bins of its observable (the exact bin sum, which is what the class's own analytical
+    integral returns).
+
+    With ROOT 6.32, RooRealIntegral does not use CMSHistErrorPropagator::analyticalIntegral
+    (the observable also reaches it through the CMSHistFunc servers) and integrates the step
+    function numerically: the extended term is off by ~2e-5 relative in a parameter-dependent,
+    non-smooth way, CachingAddNLL reports "integrals don't match" and falls back to it, and
+    MIGRAD fails (MultiDimFit "failed", nonsensical expected limits).  The patch is stored in the
+    workspace (RooAbsReal::specialIntegratorConfig) and changes nothing else."""
+    with ROOT_LOCK:
+        R = root()
+        path = os.path.join(cwd, ws)
+        f = R.TFile.Open(path)
+        w = f.Get("w")
+        names = []
+        for func in w.allFunctions():
+            if func.ClassName() not in ("CMSHistErrorPropagator", "CMSHistSum"):
+                continue
+            obs = w.var("CMS_th1x")
+            cfg = func.specialIntegratorConfig(True)
+            cfg.method1D().setLabel("RooBinIntegrator")  # CMS_th1x is a closed range
+            cfg.getConfigSection("RooBinIntegrator").setRealValue("numBins", obs.getBins())
+            exact = 0.0
+            for b in range(obs.getBins()):
+                obs.setVal(b + 0.5)
+                exact += func.getVal()
+            integral = func.createIntegral(R.RooArgSet(obs)).getVal()
+            if abs(integral - exact) > 1e-9 * max(1.0, abs(exact)):
+                raise RuntimeError(f"bin-integrator patch of {func.GetName()}: integral {integral} != bin sum {exact}")
+            names.append(func.GetName())
+        tmp = path + ".patched"
+        w.writeToFile(tmp)
+        f.Close()
+        os.replace(tmp, path)
+    return f"python: RooBinIntegrator (CMS_th1x bins) as specialIntegratorConfig of {', '.join(names)}"
+
+
+def _declare_caching_nll(R):
+    """Make cacheutils::CachingSimNLL usable from PyROOT (its header needs boost, whose include
+    directory is found next to the boost library on LD_LIBRARY_PATH)."""
+    if hasattr(R, "cacheutils") and hasattr(R.cacheutils, "CachingSimNLL"):
+        return
+    for d in os.environ.get("LD_LIBRARY_PATH", "").split(":"):
+        inc = os.path.join(os.path.dirname(d.rstrip("/")), "include")
+        if "boost" in d and os.path.isdir(os.path.join(inc, "boost", "ptr_container")):
+            R.gInterpreter.AddIncludePath(inc)
+            break
+    if not R.gInterpreter.Declare('#include "HiggsAnalysis/CombinedLimit/interface/CachingNLL.h"'):
+        raise RuntimeError("cannot declare Combine's CachingNLL.h (boost include directory not found)")
+
+
+def nll_points(cwd, ws, n, r_range):
+    """Combine's NLL (CachingSimNLL of model_s on data_obs, with the constraint terms) at the
+    nominal parameters and at n - 1 seeded random points: r uniform in ``r_range``, constrained
+    nuisances (those with a <name>_Pdf) N(nominal, 0.7), other floating parameters
+    nominal * U(0.85, 1.15).  Only differences between points are meaningful."""
+    import numpy as np
+
+    with ROOT_LOCK:
+        R = root()
+        _declare_caching_nll(R)
+        f = R.TFile.Open(os.path.join(cwd, ws))
+        w = f.Get("w")
+        mc = w.obj("ModelConfig")
+        skip = {v.GetName() for v in mc.GetObservables()} | {v.GetName() for v in mc.GetGlobalObservables()}
+        pars = sorted(v.GetName() for v in w.allVars() if not v.isConstant() and v.GetName() not in skip)
+        nominal = {p: w.var(p).getVal() for p in pars}
+        nll = R.cacheutils.CachingSimNLL(mc.GetPdf(), w.data("data_obs"), mc.GetNuisanceParameters())
+        rng = np.random.default_rng(SEED)
+        out = []
+        for k in range(n):
+            vals = dict(nominal)
+            if k:
+                for p in pars:
+                    if p == "r":
+                        vals[p] = float(rng.uniform(*r_range))
+                    elif w.pdf(f"{p}_Pdf"):
+                        vals[p] = float(nominal[p] + rng.normal(0.0, 0.7))
+                    else:
+                        vals[p] = float(nominal[p] * rng.uniform(0.85, 1.15))
+                    var = w.var(p)
+                    vals[p] = min(max(vals[p], var.getMin()), var.getMax())
+            for p, v in vals.items():
+                w.var(p).setVal(v)
+            out.append({"params": vals, "nll": float(nll.getVal())})
+        f.Close()
+    return out
+
+
 def produce(name, cfg, workdir, version, jobs):
     t_start = time.time()
+    if "measure" in cfg:
+        return produce_measure(name, cfg, workdir, version, jobs, t_start)
     cwd, card, source = prepare(name, cfg, workdir)
     log = os.path.join(cwd, "fixture.log")
     run = Runner(cwd, log)
@@ -214,6 +333,11 @@ def produce(name, cfg, workdir, version, jobs):
     out = {"fixture": name, "card": source, "combine": version, "generated": datetime.datetime.now().isoformat(),
            "seed": SEED, "extra_options": extra}
     run.run("text2workspace", ["text2workspace.py", card, "-m", "120", "-o", ws])
+    if cfg.get("bin_integrator"):
+        run.commands["workspace_patch"] = patch_bin_integrator(cwd, ws)
+    if cfg.get("nll_points"):
+        out["nll_points"] = nll_points(cwd, ws, cfg["nll_points"], cfg.get("grid") or (0.0, 3.0))
+        run.commands["nll_points"] = f"python: cacheutils::CachingSimNLL(model_s, data_obs) at {cfg['nll_points']} points"
 
     run.run("asymptotic", ["combine", "-M", "AsymptoticLimits", ws, "-m", "120", "-n", f".{name}",
                            "--seed", str(SEED)] + extra)
@@ -266,6 +390,47 @@ def produce(name, cfg, workdir, version, jobs):
     if hyb:
         out["hybrid_cls"] = hybrid_mode(run, name, ws, cwd, "LHC-limits", hyb["cls"], 0.95, jobs)
         out["hybrid_fc"] = hybrid_mode(run, name, ws, cwd, "LHC-feldman-cousins", hyb["fc"], 0.90, jobs)
+    out["commands"] = run.commands
+    out["cpu_seconds_wall"] = round(time.time() - t_start, 1)
+    path = os.path.join(FIXTURE_DIR, f"{name}.json")
+    with open(path, "w") as handle:
+        json.dump(out, handle, indent=1)
+    return name, path, out["cpu_seconds_wall"]
+
+
+def produce_measure(name, cfg, workdir, version, jobs, t_start):
+    """Impacts (combineTool.py -M Impacts, --robustFit 1) or a 2D MultiDimFit grid."""
+    cwd, card, source = prepare(name, cfg, workdir)
+    run = Runner(cwd, os.path.join(cwd, "fixture.log"))
+    ws = "ws.root"
+    out = {"fixture": name, "card": source, "combine": version, "generated": datetime.datetime.now().isoformat(),
+           "seed": SEED, "measure": cfg["measure"]}
+    run.run("text2workspace", ["text2workspace.py", card, "-m", "120", "-o", ws])
+    if cfg["measure"] == "impacts":
+        lo, hi = cfg["r_range"]
+        out["r_range"] = [lo, hi]
+        # combineTool needs CMSSW_BASE/SCRAM_ARCH only for batch job templates
+        env = {"CMSSW_BASE": os.environ.get("CMSSW_BASE", cwd), "SCRAM_ARCH": os.environ.get("SCRAM_ARCH", "none")}
+        # a tight minimiser tolerance: with Combine's default (0.1) the fixed-nuisance fits are only
+        # accurate to ~0.005 in r (e.g. templates bkg_norm: r = 1.0210 at tolerance 0.1, 1.0246 at 0.001)
+        base = ["combineTool.py", "-M", "Impacts", "-d", ws, "-m", "120", "--robustFit", "1",
+                "--cminDefaultMinimizerTolerance", "0.001",
+                "--rMin", f"{lo:g}", "--rMax", f"{hi:g}", "--parallel", str(max(1, jobs))]
+        run.run("impacts_initial", base + ["--doInitialFit"], env=env)
+        run.run("impacts_fits", base + ["--doFits"], env=env)
+        run.run("impacts_collect", base + ["-o", "impacts.json"], env=env)
+        with open(os.path.join(cwd, "impacts.json")) as handle:
+            out["impacts"] = json.load(handle)
+    else:
+        (px, py), ((xlo, xhi), (ylo, yhi)) = cfg["params"], cfg["ranges"]
+        run.run("multidimfit_grid2d", ["combine", "-M", "MultiDimFit", ws, "-m", "120", "-n", f".{name}",
+                                       "--algo", "grid", "--points", str(cfg["points"]), "-P", px, "-P", py,
+                                       "--floatOtherPOIs", "1", "--seed", str(SEED),
+                                       "--setParameterRanges", f"{px}={xlo:g},{xhi:g}:{py}={ylo:g},{yhi:g}"])
+        rows = limit_tree(one(f"higgsCombine.{name}.MultiDimFit.mH120*.root", cwd), [px, py, "deltaNLL"])
+        out["scan2d"] = {"params": [px, py], "ranges": [[xlo, xhi], [ylo, yhi]], "points": cfg["points"],
+                         "best_fit": [rows[0][px], rows[0][py]],
+                         "grid": [[row[px], row[py], 2.0 * row["deltaNLL"]] for row in rows[1:]]}
     out["commands"] = run.commands
     out["cpu_seconds_wall"] = round(time.time() - t_start, 1)
     path = os.path.join(FIXTURE_DIR, f"{name}.json")

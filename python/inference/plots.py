@@ -53,11 +53,26 @@ def _process_colors(names):
 
 
 def _data_counts(ch, main):
-    edges = np.asarray(ch.observable.edges)
+    """Data per (flattened) bin of the channel observable."""
     if main.kind == "unbinned":
-        counts, _ = np.histogram(main.values, bins=edges, weights=main.weights)
-        return counts
+        edges = [np.asarray(a.edges) for a in ch.observable.axis_list()]
+        pts = np.asarray(main.values, dtype=float).reshape(len(main.values), -1)
+        counts, _ = np.histogramdd(pts, bins=edges, weights=main.weights)
+        return counts.reshape(-1)
     return np.asarray(main.counts)
+
+
+def _views(ch):
+    """(axis, label suffix, projection) per plotted view of a channel: the observable itself for
+    1D channels, the projection onto each axis (sum over the other axes) for N-D channels."""
+    if ch.observable.ndim == 1:
+        return [(ch.observable.axis_list()[0], "", lambda a: np.asarray(a))]
+    shape = ch.observable.shape
+    out = []
+    for d, axis in enumerate(ch.observable.axes):
+        others = tuple(k for k in range(len(shape)) if k != d)
+        out.append((axis, f"_{axis.name}", lambda a, o=others: np.asarray(a).reshape(shape).sum(axis=o)))
+    return out
 
 
 def plot_fit(session, fits, outdir):
@@ -68,27 +83,30 @@ def plot_fit(session, fits, outdir):
         exp_post = lik.expected_by_process(res.values)
         exp_pre = lik.expected_counts(lik.nominal_values())
         for ch in lik.model.channels:
-            edges = np.asarray(ch.observable.edges)
             procs = list(exp_post[ch.name])
             order = sorted(procs, key=lambda p: float(np.sum(exp_post[ch.name][p])))  # largest on top
             colors = _process_colors(procs)
-            fig, ax = plt.subplots(figsize=(6.4, 4.2))
-            bottom = np.zeros(len(edges) - 1)
-            for p in order:
-                y = exp_post[ch.name][p]
-                ax.bar(edges[:-1], y, width=np.diff(edges), bottom=bottom, align="edge", color=colors[p],
-                       edgecolor="white", linewidth=1.0, label=p)
-                bottom = bottom + y
-            ax.stairs(exp_pre[ch.name], edges, color=INK, linestyle="--", linewidth=1.5, label="pre-fit total")
-            n = _data_counts(ch, data.main[ch.name])
-            centers = 0.5 * (edges[:-1] + edges[1:])
-            ax.errorbar(centers, n, yerr=np.sqrt(np.maximum(n, 0)), fmt="o", color=INK, markersize=4,
-                        label=data.label)
-            ax.set_xlabel(ch.observable.name)
-            ax.set_ylabel("events / bin")
-            ax.set_title(f"{ch.name}: post-fit (r = {res.value(lik, lik.poi):.3g})", color=INK, loc="left")
-            ax.legend(fontsize=8, ncol=2)
-            _save(fig, outdir, f"fit_{ch.name}.png")
+            n_all = _data_counts(ch, data.main[ch.name])
+            for axis, suffix, project in _views(ch):
+                edges = np.asarray(axis.edges)
+                fig, ax = plt.subplots(figsize=(6.4, 4.2))
+                bottom = np.zeros(len(edges) - 1)
+                for p in order:
+                    y = project(exp_post[ch.name][p])
+                    ax.bar(edges[:-1], y, width=np.diff(edges), bottom=bottom, align="edge", color=colors[p],
+                           edgecolor="white", linewidth=1.0, label=p)
+                    bottom = bottom + y
+                ax.stairs(project(exp_pre[ch.name]), edges, color=INK, linestyle="--", linewidth=1.5,
+                          label="pre-fit total")
+                n = project(n_all)
+                centers = 0.5 * (edges[:-1] + edges[1:])
+                ax.errorbar(centers, n, yerr=np.sqrt(np.maximum(n, 0)), fmt="o", color=INK, markersize=4,
+                            label=data.label)
+                ax.set_xlabel(axis.name)
+                ax.set_ylabel("events / bin" + (" (projection)" if suffix else ""))
+                ax.set_title(f"{ch.name}: post-fit (r = {res.value(lik, lik.poi):.3g})", color=INK, loc="left")
+                ax.legend(fontsize=8, ncol=2)
+                _save(fig, outdir, f"fit_{ch.name}{suffix}.png")
         return
     rs = np.array([r.value(lik, lik.poi) for _, r in fits if r.valid])
     errs = np.array([r.errors.get(lik.poi, np.nan) for _, r in fits if r.valid])
@@ -173,10 +191,89 @@ def plot_fc(res, outdir):
     _save(fig, outdir, "feldman_cousins.png")
 
 
+def plot_scan_2d(out, outdir):
+    """2*DeltaNLL map with the 68% / 95% contours and the best fit."""
+    plt = _plt()
+    xs, ys = (np.asarray(a) for a in out["axes"])
+    z = np.full((len(xs), len(ys)), np.nan)
+    for i, p in enumerate(out["points"]):
+        if p["valid"]:
+            z[i // len(ys), i % len(ys)] = p["deltaNLL2"]
+    fig, ax = plt.subplots(figsize=(6, 4.8))
+    dx = (xs[1] - xs[0]) if len(xs) > 1 else 1.0
+    dy = (ys[1] - ys[0]) if len(ys) > 1 else 1.0
+    zc = np.clip(z, 0, 3 * 5.99)
+    mesh = ax.pcolormesh(np.append(xs - dx / 2, xs[-1] + dx / 2), np.append(ys - dy / 2, ys[-1] + dy / 2), zc.T,
+                         cmap="Blues_r", shading="flat")
+    fig.colorbar(mesh, ax=ax, label=r"$2\Delta$NLL (clipped at 18)")
+    for key, style in (("68", "-"), ("95", "--")):
+        c = out["contours"].get(key, {})
+        for i, ln in enumerate(c.get("lines", [])):
+            ln = np.asarray(ln)
+            ax.plot(ln[:, 0], ln[:, 1], color=INK, linestyle=style, linewidth=1.8,
+                    label=f"{key}% CL" if i == 0 else None)
+    ax.plot(*out["best_fit"], marker="P", color=SERIES[1], markersize=10, markeredgecolor="white",
+            linestyle="none", label="best fit")
+    ax.set_xlabel(out["params"][0])
+    ax.set_ylabel(out["params"][1])
+    ax.grid(False)
+    ax.legend(fontsize=8, loc="upper right")
+    _save(fig, outdir, f"scan2d_{out['params'][0]}_{out['params'][1]}.png")
+
+
+def plot_impacts(res, outdir, max_params=30):
+    """Impact plot in the style of combineTool's plotImpacts.py: parameters sorted by |impact|,
+    left panel the pulls (theta_hat - theta_I) / sigma_I with post-fit errors, right panel the
+    shifts of r when the parameter is moved to its +1 / -1 sigma post-fit values."""
+    plt = _plt()
+    params = [p for p in res["params"] if p.get("valid")][:max_params]
+    if not params:
+        return None
+    n = len(params)
+    fig, (axp, axi) = plt.subplots(1, 2, figsize=(9, max(3.2, 1.6 + 0.34 * n)), sharey=True,
+                                   gridspec_kw={"width_ratios": [1, 1.2]})
+    y = np.arange(n)[::-1]
+    for ax in (axp, axi):
+        ax.grid(False)
+        ax.grid(True, axis="x", color=GRID, linewidth=0.6)
+    axp.axvspan(-2, 2, color=BAND_2S, zorder=0)
+    axp.axvspan(-1, 1, color=BAND_1S, alpha=0.5, zorder=0)
+    for yi, p in zip(y, params):
+        if "pull" in p:
+            axp.errorbar(p["pull"], yi, xerr=[[p["pull_lo"]], [p["pull_hi"]]], fmt="o", color=INK, markersize=4,
+                         linewidth=1.2, capsize=0)
+        else:  # unconstrained: no pull, show the fitted value in the label instead
+            axp.text(0, yi, "free", ha="center", va="center", fontsize=7, color=MUTED)
+    lim = max([2.5] + [abs(p["pull"]) + max(p["pull_lo"], p["pull_hi"]) + 0.3 for p in params if "pull" in p])
+    axp.set_xlim(-lim, lim)
+    axp.set_xlabel(r"$(\hat{\theta} - \theta_I)/\sigma_I$")
+    labels = []
+    for p in params:
+        if "pull" in p:
+            labels.append(p["name"])
+        else:
+            lo, v, hi = p["fit"]
+            labels.append(f"{p['name']} = {v:.3g} (+{hi - v:.2g}/-{v - lo:.2g})")
+    axp.set_yticks(y)
+    axp.set_yticklabels(labels, fontsize=8)
+    h = 0.38
+    axi.barh(y + h / 2, [p["impact_hi"] for p in params], height=h, color=SERIES[0], label=r"$+1\sigma$")
+    axi.barh(y - h / 2, [p["impact_lo"] for p in params], height=h, color=SERIES[1], label=r"$-1\sigma$")
+    axi.axvline(0, color=MUTED, linewidth=0.8)
+    axi.set_xlabel(r"$\Delta \hat{%s}$" % res["poi"])
+    axi.legend(fontsize=8, loc="best")
+    lo, v, hi = res["POIs"][0]["fit"]
+    axp.set_title(f"{res['poi']} = {v:.3f} +{hi - v:.3f}/-{v - lo:.3f}   ({res['method']} errors)", color=INK,
+                  fontsize=10, loc="left")
+    return _save(fig, outdir, "impacts.png")
+
+
 if __name__ == "__main__":
     doc = json.load(open(sys.argv[1]))
     outdir = sys.argv[2] if len(sys.argv) > 2 else "plots"
     if doc["command"] == "scan":
-        plot_scan(doc["result"], outdir)
+        (plot_scan_2d if "axes" in doc["result"] else plot_scan)(doc["result"], outdir)
+    elif doc["command"] == "impacts":
+        plot_impacts(doc["result"], outdir)
     else:
         raise SystemExit(f"re-plotting '{doc['command']}' results from JSON is not implemented")

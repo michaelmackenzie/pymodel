@@ -13,28 +13,69 @@ Remove the pre-v2 tree, which nothing imports any more:
 
 * Open items
 ** Datacard features
-- autoMCStats (Barlow-Beeston-lite, CMSHistErrorPropagator semantics)
-- shape systematics on RooAbsPdfs (syst:pdf-morph: VerticalInterpPdf)
+- autoMCStats: hist-mode 0/2, shapeN (LogQuadLinear) templates and RooDataHist processes in
+  autoMCStats channels are refused; roomodel/hfmodel export of autoMCStats models is refused
+- pdf shape systematics: shapeN on non-RooHistPdf pdfs needs Combine's library and binned data
+  (numerical normalisation); zmodel: no pdf-morphN, and floating/unbinned pdf morphs only for
+  RooGaussian/RooExponential/RooPolynomial/RooUniform/RooGenericPdf/RooLandauCB inputs; hfmodel only for
+  fixed pdfs on binned data (RooHistPdfs only); RooParametricHist / RooMultiPdf nominals with shape systematics are refused
+- nuisance edit rename/changepdf keeps the shape object name (DC.systematicsShapeMap): honoured for
+  pdf shape systematics, not yet for TH1/RooDataHist templates (datacard._template_systs)
 - rateParam / extArg read from ROOT files
-- multi-dimensional channels (the 80_r0101_2d card is really 1D; see below)
-- shapeN and envelopes in zmodel
+- multi-dimensional channels (obs:multidim, examples/two_dim, done 2026-09-28): 2D/3D RooDataHist
+  and RooDataSet data_obs with RooHistPdfs / fixed or floating RooAbsPdfs / RooDataHist templates
+  (roomodel: all; hfmodel and oracle: fixed binned shapes; zmodel: refused). Still open:
+  - shape systematics in N-D channels are refused: Combine's text2workspace crashes on 2D
+    RooHistPdf variations (ShapeTools.getPdf histpdf.get().second(), not in PyROOT 6.32); once a
+    fixed Combine is available, implement FastVerticalInterpHistPdf2D2 (= hist_pdf_fractions with
+    bin areas, conditional=False) and VerticalInterpPdf for N-D pdfs (datacard._process refuses both)
+  - roomodel export of N-D channels (roomodel/__init__.py export refuses them)
+  - N-D envelopes (RooMultiPdf) are accepted by roomodel but not validated against Combine
+  - the user's workspace_mumem_80_evt_r0101_2d.root (2026-08-22) still has a 1D data_obs over
+    obs_80 with 2D RooHistPdfs: pymodel refuses it (obs_t_80 would float); regenerate it with the
+    fixed build_model.C and compare with scripts/compare_combine.py
 ** Methods
-- HybridNew-style adaptive toys (stop at a target CLs error) and job splitting / merging
-  of toy results (--jobs is not implemented yet)
-- 2D scans (MultiDimFit grid in two POIs), impacts
 - the expected band for toy CLs needs many toys; add a reuse of s+b toys across quantiles
+- adaptive toys target the observed CLs only; an --expected-from-grid style accuracy for the
+  expected quantiles is not implemented
+- impacts: only the POI r; no --approx robust (robustHesse) and no nuisance groups
+- 2D scans run serially (each point starts from its neighbour); --jobs is not used there
+- job splitting/merging covers limit and fc; significance --method toys has --jobs only
 ** Performance
 - zmodel toy fits are slow (TF call overhead per NLL evaluation); vectorise over toys
-- parallel toys (multiprocessing with per-worker seeds derived from --seed)
+- --jobs: each spawned worker rebuilds the model (a few s with ROOT), so small toy runs gain
+  little; refinement points are computed one at a time
 ** Known small differences from Combine
+- Combine (this build, ROOT 6.32) integrates CMSHistErrorPropagator numerically: autoMCStats
+  fits are non-smooth and can fail ("integrals don't match"); the mcstats fixture uses a
+  workspace patched with RooBinIntegrator (tests/combine_fixtures.py patch_bin_integrator).
+  Worth reporting upstream / checking with a newer Combine
 - hfmodel: pyhf interpolation for asymmetric lnN inside |theta| < 0.5 and for template
   morphs with mixed scales (declared in notes, documented in docs/backend-hfmodel.md)
 - Combine rounds template kappas to %f (about 1e-6 relative)
-- zmodel normalises translated pdfs precisely; Combine's default RooFit integrator
-  mis-normalises some RooGenericPdfs (3.4% on mumem_75 rmc_ext)
+- TH1 templates: Combine copies them into TH1F (rebinH1: single-precision contents) and its
+  CropUnderflows sets every bin < 1e-9 (not only <= 0) to 1e-9; semantics.vertical_morph
+  floors only bins <= 0 and keeps double precision (~1e-7 relative).  The RooHistPdf morph
+  (semantics.hist_pdf_fractions) already does both; consider the same for templates
+- zmodel now reproduces RooFit's default RooIntegrator1D (as Combine) for RooGenericPdf/RooLandauCB,
+  computing 15 of RooFit's 20 stages; a pdf that needs more makes nll_main raise (raise the
+  stage count or add a dynamic loop if this is ever hit).  Combine's default integrator
+  mis-normalises some RooGenericPdfs (3.4% on mumem_75 rmc_ext, 2.5e-4 at kinks)
+- zmodel envelopes evaluate every RooMultiPdf component per NLL call (~0.8-1 ms per call on
+  mumep_40_env vs ~0.02 ms in roomodel); evaluate only the selected one if it matters
+- zmodel expected yields of unbinned channels (Asimov) use bin-centre densities scaled to the
+  total, roomodel uses bin integrals: pdf_shape_syst card_unbinned expected yields differ by
+  design (NLLs agree to 1e-15)
 
 * Found in the mumep_ana inputs (separate task)
-- mumem_75_es_nuis (param) is not used by any pdf: the formulas use the constant mumem_75_es
-- combine_mumem_80_evt_r0101_2d: the pdfs are 2D but data_obs is 1D, so obs_t_80 floats as a parameter
+- FIXED in the code 2026-09-27 (cards/workspaces must be regenerated): the ES param line named
+  mumem_75_es_nuis while the pdfs use mumem_75_es (tools/write_datacard.C now writes the used name, only when a pdf depends on it)
+- FIXED in the code 2026-09-27: 2D fits had a 1D data_obs, so obs_t_80 floated as a parameter;
+  build_model.C now builds a 2D data_obs (pseudo-data) and refuses 2D fits to real data, since the inputs have no (p, t0) data histogram
 - *_norm variables are named <proc>_norm, not <pdf>_norm, so Combine ignores them (harmless today)
 - RooGenericPdf normalisation with RooFit's default integrator is off by up to 3.4% (see above)
+- Up/Down pdfs written by build_model.C: their <pdf>_<syst>Up/Down_norm objects are ignored by
+  Combine (no normalisation effect for shape systematics on pdfs); put rate effects in lnN lines.
+  The DIO RooGenericPdf has a raw integral ~1e-117: VerticalInterpPdf's absolute floors (1e-15)
+  make any shape systematic on it unstable (fits run away where the morph is <= 0); rescale the
+  formula to O(1) raw values or use RooHistPdf shapes (docs/statistics.md)

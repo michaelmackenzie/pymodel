@@ -85,20 +85,7 @@ def rel(a, b):
     return abs(a - b) / max(abs(b), 1e-12)
 
 
-class SemanticBackend(Backend):
-    """The numpy oracle wrapped as a backend (not a user-facing backend)."""
-
-    name = "semantic"
-    supported_features = frozenset(SemanticLikelihood.supported | {"shape:parametric"})
-
-    def runtime_versions(self):
-        return [("numpy", np.__version__)]
-
-    def create(self, model, options):
-        try:
-            return SemanticLikelihood(model)
-        except NotImplementedError as exc:
-            raise UnsupportedByBackend(f"semantic oracle: {exc}") from exc
+from semantic_backend import SemanticBackend  # noqa: E402  (importable for parallel workers)
 
 
 def backend_names(selected):
@@ -227,8 +214,19 @@ FIXTURE_MODELS = {
     "mumem_75_hists": ("mumep", "combine_mumem_75_evt_r0104_hists.txt", "workspace_mumem_75_evt_r0104_hists.root"),
     "mumem_75_funcs": ("mumep", "combine_mumem_75_evt_r0104_funcs.txt", "workspace_mumem_75_evt_r0104_funcs.root"),
     "mumep_40_env": ("mumep", "combine_mumep_40_evt_r0104_env.txt", "workspace_mumep_40_evt_r0104_env.root"),
+    # shape systematics on RooAbsPdfs (syst:pdf-morph / syst:histpdf-morph)
+    "pdf_shape_syst": ("example", "pdf_shape_syst", "card.txt"),
+    "pdf_shape_syst_histpdf": ("example", "pdf_shape_syst", "card_histpdf.txt"),
+    "pdf_shape_syst_floating": ("example", "pdf_shape_syst", "card_floating.txt"),
+    "pdf_shape_syst_unbinned": ("example", "pdf_shape_syst", "card_unbinned.txt"),
+    # autoMCStats (Barlow-Beeston-lite)
+    "mcstats": ("example", "mcstats", "card.txt"),
+    # multi-dimensional (p, t0) channels (obs:multidim)
+    "two_dim": ("example", "two_dim", "card.txt"),
+    "two_dim_param": ("example", "two_dim", "card_param.txt"),
+    "two_dim_unbinned": ("example", "two_dim", "card_unbinned.txt"),
 }
-NEEDS_COMBINE_LIB = {"envelope", "mumep_40_env"}
+NEEDS_COMBINE_LIB = {"envelope", "mumep_40_env", "mumem_75_funcs"}  # mumem_75_funcs: RooLandauCB
 
 _MODELS = {}
 
@@ -657,7 +655,11 @@ def t_backend_vs_oracle():
         except Skip as exc:
             msgs.append(f"{fixture}: SKIP {exc}")
             continue
-        oracle = SemanticLikelihood(model)
+        try:
+            oracle = SemanticLikelihood(model)
+        except NotImplementedError as exc:  # e.g. a regenerated mumep card whose pdfs now float
+            msgs.append(f"{fixture}: SKIP oracle: {exc}")
+            continue
         data = observed_dataset(model)
         pts = random_points(oracle, 10, np.random.default_rng(3))
 
@@ -817,6 +819,43 @@ for _fx in FIXTURE_MODELS:
 
 
 # ----------------------------------------------------------------------------------------
+# FAST: zmodel envelopes and floating pdf morphs vs roomodel (zmodel feature gaps)
+# ----------------------------------------------------------------------------------------
+
+@test("fast", "zmodel vs roomodel: nll_main, envelope penalty and inactive parameters per state; floating/unbinned pdf morphs")
+def t_zmodel_vs_roomodel():
+    if ARGS.backend not in (None, "zmodel"):
+        raise Skip("zmodel-specific")
+    out = []
+    for fixture in ("envelope", "pdf_shape_syst_floating", "pdf_shape_syst_unbinned"):
+        model, card, d = fixture_model(fixture)
+        with chdir(d):
+            z = likelihood("zmodel", model, card)
+            r = likelihood("roomodel", model, card)
+        data = observed_dataset(model)
+        rng = np.random.default_rng(11)
+        x0 = z.nominal_values()
+        cats = [i for i, p in enumerate(z.parameters) if p.role == I.ROLE_DISCRETE]
+        states = [(i, k) for i in cats for k in range(z.parameters[i].n_states)] or [(None, None)]
+        worst = 0.0
+        for ic, k in states:
+            ref = None
+            for x in random_points(z, 8, rng):
+                if ic is not None:
+                    x[ic] = k
+                a, b = z.nll(x, data), r.nll(x, data)
+                ref = ref if ref is not None else (a, b)
+                worst = max(worst, abs((a - ref[0]) - (b - ref[1])))
+                check(abs(a - b) < 1e-8 * max(1.0, abs(b)), f"{fixture}: zmodel NLL {a!r} vs roomodel {b!r}")
+                if ic is not None:
+                    check(z.discrete_penalty(x) == r.discrete_penalty(x), f"{fixture}: penalty differs in state {k}")
+                    check(z.inactive_parameters(x) == r.inactive_parameters(x),
+                          f"{fixture}: inactive {z.inactive_parameters(x)} vs {r.inactive_parameters(x)}")
+        out.append(f"{fixture} max|d(dNLL)|={worst:.1e}")
+    return " | ".join(out)
+
+
+# ----------------------------------------------------------------------------------------
 # FAST: toys
 # ----------------------------------------------------------------------------------------
 
@@ -857,6 +896,930 @@ def t_toys():
         check(abs(gm.mean() - 41) < 4 * math.sqrt(41 / n), f"gmN prior Gamma(N+1): mean {gm.mean():.2f} vs 41")
         check(all(t.global_obs == prior[0].global_obs for t in prior), "prior toys keep the nominal global observables")
     return per_backend(one, backend_names(ARGS.backend))
+
+
+# ----------------------------------------------------------------------------------------
+# FAST: shape systematics on RooAbsPdfs (syst:pdf-morph, syst:histpdf-morph)
+# ----------------------------------------------------------------------------------------
+
+def _pdf_morph_points(lik, rng, n):
+    """Random points plus fixed ones in the quadratic/smooth region and beyond |x| = 1."""
+    special = [dict(sigshift=0.3, sigwidth=0.2, bkgslope=-0.4), dict(sigshift=-1.7, sigwidth=2.3, bkgslope=1.4),
+               dict(sigshift=0.9, sigwidth=-0.45, bkgslope=-2.5), dict(sigshift=1.0, sigwidth=0.49, bkgslope=1.0),
+               dict(sigshift=-3.0, sigwidth=-3.0, bkgslope=3.2, r=2.0)]
+    pts = []
+    for d in special:
+        x = lik.nominal_values().copy()
+        for k, v in d.items():
+            x[lik.index[k]] = v
+        pts.append(x)
+    return pts + random_points(lik, n, rng)
+
+
+@test("fast", "pdf shape systs: IR of the example cards (morph kind, scales, fixed contents, Up/Down _norm ignored)")
+def t_pdf_morph_ir():
+    model, _, d = fixture_model("pdf_shape_syst")
+    sig = _proc(model, "sr", "sig")
+    check(sig.shape.pdf_morph == I.PDF_MORPH_VERTICAL, f"sig morph {sig.shape.pdf_morph}")
+    check([(s.param, s.scale, s.kind) for s in sig.shape.pdf_systs] == [("sigshift", 1.0, "shape"),
+                                                                       ("sigwidth", 0.5, "shape")], "sig systs")
+    check(sig.shape.pdf_systs[0].up.name == "sig_pdf_sigshiftUp", "$SYSTEMATIC pattern resolution")
+    check(abs(sig.shape.raw_integral - math.sqrt(2 * math.pi) * 0.5) < 1e-9, "raw integral of the nominal Gaussian")
+    check(abs(sig.shape.pdf_systs[1].up_integral - math.sqrt(2 * math.pi) * 0.55) < 1e-9, "raw integral of sigwidthUp")
+    check(sig.rate == 30.0 and not sig.norm_terms[1:], "yield: rate * nominal _norm, no Up/Down normalisation term")
+    check(any("sig_pdf_sigshiftUp_norm" in n and "ignored" in n for n in model.notes), "note on the ignored Up/Down _norm")
+    check({"syst:pdf-morph"} <= model.features() and "syst:histpdf-morph" not in model.features(), "features")
+    hist, _, _ = fixture_model("pdf_shape_syst_histpdf")
+    check(_proc(hist, "sr", "bkg").shape.pdf_morph == I.PDF_MORPH_HIST and "syst:histpdf-morph" in hist.features(),
+          "RooHistPdf nominal -> hist morph")
+    flo, _, _ = fixture_model("pdf_shape_syst_floating")
+    fs = _proc(flo, "sr", "sig").shape
+    check(fs.params == ["sig_scale"] and not fs.contents and not fs.pdf_systs[0].up_contents,
+          f"floating pdf: params {fs.params}, no fixed contents")
+    # Combine refusals: mismatched classes, mixed algorithms
+    base = open(os.path.join(d, "card.txt")).read()
+    bad_class = base.replace("shapes * * workspace.root w:$PROCESS_pdf w:$PROCESS_pdf_$SYSTEMATIC",
+                             "shapes sig * workspace.root w:sig_pdf w:bkg_pdf_$SYSTEMATIC\n"
+                             "shapes bkg * workspace.root w:bkg_pdf w:bkg_pdf_$SYSTEMATIC")
+    bad_class = bad_class.replace("bkgslope     shape -     1", "bkgslope     shape 1     1")
+    bad_class = bad_class.replace("sigshift     shape 1     -", "sigshift     shape -     -")
+    bad_class = bad_class.replace("sigwidth     shape 0.5   -", "sigwidth     shape -     -")
+    mixed = base.replace("sigwidth     shape 0.5", "sigwidth     shapeN 0.5")
+    for label, text, what in (("mismatched classes", bad_class, "mismatched shape types"),
+                              ("mixed algorithms", mixed, "mixes the morphing algorithms")):
+        card = write_card("pdf_morph_bad", f"{label.replace(' ', '_')}.txt", text,
+                          [os.path.join(d, "workspace.root")])
+        try:
+            with chdir(os.path.dirname(card)):
+                build_ir(card)
+        except UnsupportedFeature as exc:
+            check(what in str(exc), f"{label}: unexpected message {exc}")
+        else:
+            raise AssertionError(f"{label} must raise UnsupportedFeature")
+    return "vertical/hist kinds, scales, raw integrals, ignored Up/Down _norm, refusals"
+
+
+@test("fast", "pdf shape systs: oracle fractions vs an independent evaluation of the workspace pdfs")
+def t_pdf_morph_reference():
+    """VerticalInterpPdf (algorithm 0) re-derived from the raw RooFit values of the pdfs, and
+    FastVerticalInterpHistPdf2 from TH1F-rounded bin-centre values, without pymodel code."""
+    from modelspec import rootinput as R
+
+    ROOT = R.root()
+    model, _, d = fixture_model("pdf_shape_syst")
+    hmodel, _, _ = fixture_model("pdf_shape_syst_histpdf")
+    oracle, horacle = SemanticLikelihood(model), SemanticLikelihood(hmodel)
+    systs = {"sig": [("sigshift", 1.0), ("sigwidth", 0.5)], "bkg": [("bkgslope", 1.0)]}
+    worst = [0.0, 0.0]
+    for wsname, lik, idx in (("workspace.root", oracle, 0), ("workspace_hist.root", horacle, 1)):
+        w = R.get_workspace(os.path.join(d, wsname), "w")
+        x = w.var("x")
+        nset = ROOT.RooArgSet(x)
+        edges = np.asarray(lik.model.channels[0].observable.edges)
+        cen, wid = 0.5 * (edges[1:] + edges[:-1]), np.diff(edges)
+
+        def raw(name):
+            out = []
+            for c in cen:
+                x.setVal(c)
+                out.append(w.pdf(name).getVal())
+            return np.array(out)
+
+        def norm_hist(name):
+            out = []
+            for c, wi in zip(cen, wid):
+                x.setVal(c)
+                out.append(np.float32(w.pdf(name).getVal(nset) * wi))
+            out = np.array(out, dtype=float)
+            return out / out.sum()
+
+        for pt in _pdf_morph_points(lik, np.random.default_rng(21), 6):
+            exp = lik.expected_by_process(pt)["sr"]
+            for proc, sy in systs.items():
+                q = min([1.0] + [sc for _, sc in sy])
+                if idx == 0:
+                    f0, i0 = raw(f"{proc}_pdf"), w.pdf(f"{proc}_pdf").createIntegral(nset).getVal()
+                    num, den = f0.copy(), i0
+                    for s, sc in sy:
+                        c = sc * pt[lik.index[s]]
+                        fu, fd = raw(f"{proc}_pdf_{s}Up"), raw(f"{proc}_pdf_{s}Down")
+                        iu = w.pdf(f"{proc}_pdf_{s}Up").createIntegral(nset).getVal()
+                        idn = w.pdf(f"{proc}_pdf_{s}Down").createIntegral(nset).getVal()
+                        if abs(c) >= q:
+                            num += c * (fu - f0) if c > 0 else c * (f0 - fd)
+                            den += c * (iu - i0) if c > 0 else c * (i0 - idn)
+                        else:
+                            cu, cd, cc = c * (q + c) / (2 * q), -c * (q - c) / (2 * q), -c * c / q
+                            num += cu * fu + cd * fd + cc * f0
+                            den += cu * iu + cd * idn + cc * i0
+                    ref = np.where(num > 0, num, 1e-15) / (den if den > 0 else 1e-10) * wid
+                else:
+                    t = norm_hist(f"{proc}_pdf")
+                    nom = t.copy()
+                    for s, sc in sy:
+                        c = sc * pt[lik.index[s]]
+                        dhi, dlo = norm_hist(f"{proc}_pdf_{s}Up") - nom, norm_hist(f"{proc}_pdf_{s}Down") - nom
+                        xn = c / q
+                        step = math.copysign(1.0, c) if abs(c) >= q else 0.125 * xn * (xn * xn * (3 * xn * xn - 10) + 15)
+                        t = t + 0.5 * c * ((dhi - dlo) + (dhi + dlo) * step)
+                    t = np.where(t / wid < 1e-9, 1e-9 * wid, t)
+                    ref = t / t.sum()
+                mine = exp[proc] / np.sum(exp[proc]) * np.sum(ref)
+                worst[idx] = max(worst[idx], float(np.max(np.abs(mine - ref) / np.maximum(ref, 1e-300))))
+    check(max(worst) < 1e-10, f"relative fraction differences {worst}")
+    return f"max rel. difference: VerticalInterpPdf {worst[0]:.1e}, FastVerticalInterpHistPdf2 {worst[1]:.1e}"
+
+
+@test("fast", "pdf shape systs: backends vs oracle (NLL, yields) incl. |x| < q and |x| > 1; hfmodel only equal scales")
+def t_pdf_morph_backends():
+    names = [n for n in backend_names(ARGS.backend) if n != "semantic"]
+    msgs = []
+    model_s1, _, d = fixture_model("pdf_shape_syst_histpdf")
+    for ch in model_s1.channels:  # a variant with one common scale (hfmodel code4p is exact only then)
+        for proc in ch.processes:
+            for s in proc.shape.pdf_systs:
+                s.scale = 1.0
+    cases = [("card", fixture_model("pdf_shape_syst")[0]), ("histpdf", fixture_model("pdf_shape_syst_histpdf")[0]),
+             ("histpdf scale 1", model_s1)]
+    for label, model in cases:
+        oracle = SemanticLikelihood(model)
+        data = observed_dataset(model)
+        pts = _pdf_morph_points(oracle, np.random.default_rng(4), 10)
+
+        def one(name):
+            with chdir(d):
+                lik = likelihood(name, model, os.path.join(d, "card.txt"))
+            notes = getattr(lik, "notes", [])
+            if any("vertical morphing uses pyhf histosys code4p" in n for n in notes):
+                return "declared inexact smooth region (mixed scales), not compared"
+            worst = 0.0
+            for x in pts:
+                a, b = lik.nll(x, data), oracle.nll(x, data)
+                worst = max(worst, abs(a - b))
+                check(abs(a - b) < 1e-8 * max(1.0, abs(b)), f"{label}/{name}: NLL {a:.12g} vs oracle {b:.12g} at "
+                                                          f"{oracle.values_dict(x)}")
+                ea, eb = lik.expected_by_process(x), oracle.expected_by_process(x)
+                for p in eb["sr"]:
+                    check(np.allclose(ea["sr"][p], eb["sr"][p], rtol=1e-9, atol=1e-12),
+                          f"{label}/{name}: expected {p} {ea['sr'][p]} vs {eb['sr'][p]}")
+            return f"max|dNLL| {worst:.1e}"
+        msgs.append(f"{label}: " + per_backend(one, names))
+    return " | ".join(msgs)
+
+
+@test("fast", "pdf shape systs: roomodel on floating/unbinned pdfs vs a RooFit NLL of the same VerticalInterpPdf")
+def t_pdf_morph_roomodel_floating():
+    """roomodel's NLL differences equal those of an independently built RooFit model (the
+    workspace pdfs, VerticalInterpPdf or the equivalent RooRealSumPdf, RooAddPdf, RooNLLVar)."""
+    from modelspec import rootinput as R
+
+    ROOT = R.root()
+    out = []
+    for fixture in ("pdf_shape_syst_floating", "pdf_shape_syst_unbinned"):
+        model, card, d = fixture_model(fixture)
+        with chdir(d):
+            lik = likelihood("roomodel", model, card)
+        w = R.get_workspace(os.path.join(d, "workspace.root"), "w")
+        x = w.var("x")
+        nuis = {}
+        for n in lik.names:
+            v = w.var(n)
+            nuis[n] = v if v else ROOT.RooRealVar(n, n, 0.0)
+            nuis[n].setConstant(False)
+        keep, pdfs, coefs = [], ROOT.RooArgList(), ROOT.RooArgList()
+        for proc in model.channels[0].processes:
+            sh = proc.shape
+            q = min([1.0] + [s.scale for s in sh.pdf_systs])
+            funcs, cs = ROOT.RooArgList(w.pdf(sh.ref.name)), ROOT.RooArgList()
+            terms = []
+            for s in sh.pdf_systs:
+                funcs.add(w.pdf(s.up.name))
+                funcs.add(w.pdf(s.down.name))
+                c = ROOT.RooFormulaVar(f"c_{proc.name}_{s.param}", f"{s.scale!r}*@0", ROOT.RooArgList(nuis[s.param]))
+                keep.append(c)
+                terms.append(c)
+            if hasattr(ROOT, "VerticalInterpPdf"):
+                for c in terms:
+                    cs.add(c)
+                morph = ROOT.VerticalInterpPdf(f"ref_{proc.name}", "", funcs, cs, q, 0)
+            else:
+                qs = repr(q)
+                cen = "+".join(f"((abs(@{k})>={qs}) ? ((@{k}>0) ? -@{k} : @{k}) : (-@{k}*@{k}/{qs}))"
+                               for k in range(len(terms)))
+                al = ROOT.RooArgList()
+                for c in terms:
+                    al.add(c)
+                c0 = ROOT.RooFormulaVar(f"c0_{proc.name}", f"1.0+{cen}", al)
+                cs.add(c0)
+                keep.append(c0)
+                for c in terms:
+                    for e in (f"((abs(@0)>={qs}) ? ((@0>0) ? @0 : 0.0) : (@0*({qs}+@0)/(2.0*{qs})))",
+                              f"((abs(@0)>={qs}) ? ((@0>0) ? 0.0 : -@0) : (-@0*({qs}-@0)/(2.0*{qs})))"):
+                        f = ROOT.RooFormulaVar(f"{c.GetName()}_{len(keep)}", e, ROOT.RooArgList(c))
+                        keep.append(f)
+                        cs.add(f)
+                morph = ROOT.RooRealSumPdf(f"ref_{proc.name}", "", funcs, cs)
+                morph.setFloor(True)
+            keep += [funcs, cs, morph]
+            factors = [ROOT.RooConstVar(f"rate_{proc.name}", "", proc.rate)]
+            if proc.is_signal:
+                factors.append(nuis["r"])
+            for t in proc.norm_terms:
+                factors.append(ROOT.RooFormulaVar(f"n_{proc.name}_{t.param}", f"exp(@0*{math.log(t.kappa_hi)!r})",
+                                                  ROOT.RooArgList(nuis[t.param])))
+            fl = ROOT.RooArgList()
+            for f in factors:
+                fl.add(f)
+            yld = ROOT.RooProduct(f"y_{proc.name}", "", fl)
+            keep += factors + [fl, yld]
+            pdfs.add(morph)
+            coefs.add(yld)
+        tot = ROOT.RooAddPdf("ref_total", "", pdfs, coefs)
+        dname = "data_obs_unbinned" if "unbinned" in fixture else "data_obs"
+        nll = tot.createNLL(w.data(dname), ROOT.RooFit.Extended(True), ROOT.RooFit.EvalBackend("legacy"))
+        data = observed_dataset(model)
+        pts = _pdf_morph_points(lik, np.random.default_rng(8), 8)
+        cons = lambda x: sum(0.5 * x[lik.index[p.name]] ** 2 for p in model.constrained_parameters())  # noqa: E731
+
+        def ref(xv):
+            for n, v in zip(lik.names, xv):
+                nuis[n].setVal(float(v))
+            return nll.getVal() + cons(xv)
+        x0 = lik.nominal_values()
+        r0, m0 = ref(x0), lik.nll(x0, data)
+        worst = 0.0
+        for xv in pts:
+            worst = max(worst, abs((lik.nll(xv, data) - m0) - (ref(xv) - r0)))
+        check(worst < 1e-8, f"{fixture}: max |dNLL(roomodel) - dNLL(RooFit)| = {worst:.2e}")
+        out.append(f"{fixture} {worst:.1e}")
+    return ", ".join(out)
+
+
+# ----------------------------------------------------------------------------------------
+# FAST: parallel toys, job splitting/merging, impacts, 2D scans (inference layer + CLI)
+# ----------------------------------------------------------------------------------------
+
+def _no_zmodel(names, toys=False):
+    """Tests of the shared layer run on semantic/hfmodel/roomodel.  zmodel only when selected
+    explicitly, and never for toy tests (TF call overhead makes toy fits slow)."""
+    out = [n for n in names if n != "zmodel" or (ARGS.backend == "zmodel" and not toys)]
+    if not out:
+        raise Skip("zmodel is not used for the toy tests of the shared inference layer (slow toy fits)")
+    return out
+
+
+def run_cli(bname, argv, cwd):
+    """Run a pymodel command in-process with backend ``bname`` (output silenced)."""
+    import io
+    import pymodel_core as C
+
+    b = backend(bname)
+    args = C.build_parser(b).parse_args(argv)
+    with chdir(cwd), contextlib.redirect_stdout(io.StringIO()):
+        try:
+            getattr(C, "cmd_" + args.command)(b, args)
+        except UnsupportedByBackend as exc:
+            raise Skip(f"{bname}: {exc}") from exc
+
+
+def _read(path):
+    with open(path) as handle:
+        return json.load(handle)
+
+
+@test("fast", "parallel toys: --jobs 1 and --jobs 3 give bit-identical toys (limit, fc, significance, fit -t)")
+def t_parallel_determinism():
+    def one(name):
+        d = WORK.example("counting")
+        out = os.path.join(WORK.root, "parallel", name)
+        os.makedirs(out, exist_ok=True)
+        f = lambda s: os.path.join(out, s)
+        common = ["card.txt", "--seed", "7"]
+        for j in (1, 3):
+            run_cli(name, ["limit"] + common + ["--method", "toys", "--grid", "1.5,2.5", "--toys-per-point", "40",
+                                                "--refine", "1", "-j", str(j), "-o", f(f"l{j}.json"),
+                                                "--save-toy-results", f(f"lraw{j}.json")], d)
+            run_cli(name, ["fc"] + common + ["--grid", "0.5,1.8", "--toys-per-point", "40", "--refine", "0", "-j",
+                                             str(j), "-o", f(f"fc{j}.json"), "--save-toy-results", f(f"fraw{j}.json")],
+                    d)
+            run_cli(name, ["significance"] + common + ["--method", "toys", "--toys-per-point", "40", "-j", str(j),
+                                                       "-o", f(f"z{j}.json")], d)
+            run_cli(name, ["fit"] + common + ["-t", "12", "--expect-signal", "1", "--toys-frequentist", "-j", str(j),
+                                              "-o", f(f"t{j}.json")], d)
+        a, b = _read(f("lraw1.json")), _read(f("lraw3.json"))
+        check(a["points"] == b["points"], "CLs raw test statistics differ between --jobs 1 and 3")
+        check(len(a["points"]) == 3 and all(len(p["q_b"]) + p["failed_b"] == 40 for p in a["points"]),
+              "expected 3 points (grid + 1 refinement) with 40 b-only toys each")
+        la, lb = _read(f("l1.json"))["result"], _read(f("l3.json"))["result"]
+        check(la["observed"] == lb["observed"] and la["expected"] == lb["expected"], "CLs limits differ")
+        check(_read(f("fraw1.json"))["points"] == _read(f("fraw3.json"))["points"], "FC raw toys differ")
+        check(_read(f("z1.json"))["result"]["toys"] == _read(f("z3.json"))["result"]["toys"], "toy significance differs")
+        check(_read(f("t1.json"))["result"]["fits"] == _read(f("t3.json"))["result"]["fits"], "toy fits differ")
+        return f"limit {la['observed']:.4g}"
+    return per_backend(one, _no_zmodel(backend_names(ARGS.backend), toys=True))
+
+
+@test("fast", "job splitting: --toy-chunk and --points jobs merged with 'merge' equal the single run exactly")
+def t_split_merge():
+    def one(name):
+        d = WORK.example("counting")
+        out = os.path.join(WORK.root, "merge", name)
+        os.makedirs(out, exist_ok=True)
+        f = lambda s: os.path.join(out, s)
+        base = ["card.txt", "--seed", "11", "--toys-per-point", "40", "--grid", "1.5,2.5"]
+        run_cli(name, ["limit", "--method", "toys"] + base + ["--refine", "0", "-o", f("full.json"),
+                                                               "--save-toy-results", f("full_raw.json")], d)
+        for i in range(3):
+            run_cli(name, ["limit", "--method", "toys"] + base + ["--toy-chunk", f"{i}/3", "-o", f(f"c{i}.json"),
+                                                                   "--save-toy-results", f(f"c{i}_raw.json")], d)
+        for r in ("1.5", "2.5"):
+            run_cli(name, ["limit", "--method", "toys"] + base + ["--points", r, "-o", f(f"p{r}.json"),
+                                                                   "--save-toy-results", f(f"p{r}_raw.json")], d)
+        run_cli(name, ["merge", f("c0_raw.json"), f("c1_raw.json"), f("c2_raw.json"), "-o", f("mc.json"),
+                       "--save-toy-results", f("mc_raw.json")], d)
+        run_cli(name, ["merge", f("p1.5_raw.json"), f("p2.5_raw.json"), "-o", f("mp.json")], d)
+        full = _read(f("full.json"))["result"]
+        for tag in ("mc", "mp"):
+            m = _read(f(f"{tag}.json"))["result"]
+            check(m["observed"] == full["observed"] and m["expected"] == full["expected"],
+                  f"merged ({tag}) limit {m['observed']} vs single run {full['observed']}")
+            for key in ("CLs", "CLb", "CLsplusb", "n_sb", "n_b"):
+                check([p[key] for p in m["points"]] == [p[key] for p in full["points"]], f"merged ({tag}) {key} differ")
+        fr, mr = _read(f("full_raw.json"))["points"], _read(f("mc_raw.json"))["points"]
+        check(all(sorted(a["q_sb"]) == sorted(b["q_sb"]) and sorted(a["q_b"]) == sorted(b["q_b"])
+                  for a, b in zip(fr, mr)), "merged raw toys are not the single-run toys")
+        # a file merged with itself would double count its toys: refused
+        try:
+            run_cli(name, ["merge", f("c0_raw.json"), f("c0_raw.json"), "-o", f("bad.json")], d)
+        except SystemExit as exc:
+            check("more than one file" in str(exc), f"unexpected merge error: {exc}")
+        else:
+            raise AssertionError("merging a file with itself was not refused")
+        # FC: two chunks merged equal the single run
+        fcb = ["card.txt", "--seed", "11", "--toys-per-point", "30", "--grid", "0.5,1.8"]
+        run_cli(name, ["fc"] + fcb + ["--refine", "0", "-o", f("fcf.json")], d)
+        for i in range(2):
+            run_cli(name, ["fc"] + fcb + ["--toy-chunk", f"{i}/2", "-o", f(f"fc{i}.json"),
+                                          "--save-toy-results", f(f"fc{i}_raw.json")], d)
+        run_cli(name, ["merge", f("fc0_raw.json"), f("fc1_raw.json"), "-o", f("fcm.json")], d)
+        a, b = _read(f("fcf.json"))["result"], _read(f("fcm.json"))["result"]
+        check([p["p"] for p in a["points"]] == [p["p"] for p in b["points"]] and a["upper"] == b["upper"],
+              "merged FC p-values differ from the single run")
+        return f"limit {full['observed']:.4g}"
+    return per_backend(one, _no_zmodel(backend_names(ARGS.backend), toys=True))
+
+
+@test("fast", "adaptive toys: --cls-acc/--p-acc add toys until the target, caps are recorded and flagged")
+def t_adaptive_toys():
+    from inference.hybrid import feldman_cousins, toy_cls_limit
+    from inference.parallel import ToySeeds
+
+    def one(name):
+        model, card, d = fixture_model("counting")
+        with chdir(d):
+            lik = likelihood(name, model, card)
+        res = toy_cls_limit(lik, Fitter(lik), ToySeeds(3), [1.9, 4.0], ntoys=25, cls_acc=0.02, max_toys=200,
+                            expected=False)
+        p19, p4 = res.points
+        cls, err = p19.pvalues()[4:6]
+        check(p19.n_sb > 25, f"no toys added at r=1.9 (CLs {cls:.3f} +- {err:.3f})")
+        check(err <= 0.02 or p19.n_sb == 200, f"r=1.9 stopped at CLs error {err:.3f} with {p19.n_sb} toys")
+        check("sigma" in p4.stop_reason or "accuracy" in p4.stop_reason, f"r=4 stop reason: {p4.stop_reason}")
+        capped = toy_cls_limit(lik, Fitter(lik), ToySeeds(3), [1.9], ntoys=25, cls_acc=0.001, max_toys=50,
+                               expected=False)
+        check(capped.points[0].n_sb == 50 and capped.points[0].stop_reason.startswith("max toys"),
+              f"cap not applied: {capped.points[0].n_sb} toys, {capped.points[0].stop_reason}")
+        check(any("max toys reached" in fl for fl in capped.flags), "a capped point must be flagged")
+        fc = feldman_cousins(lik, Fitter(lik), ToySeeds(3), [1.6], ntoys=25, p_acc=0.03, max_toys=400)
+        p, e = fc.points[0].pvalue()
+        check(e <= 0.03 or fc.points[0].n == 400 or abs(p - 0.1) > 3 * e, f"FC p {p:.3f} +- {e:.3f}")
+        check(fc.points[0].n > 25, "no FC toys added near alpha")
+        return f"r=1.9: {p19.n_sb} toys, CLs {cls:.3f}+-{err:.3f}; FC r=1.6: {fc.points[0].n} toys"
+    return per_backend(one, _no_zmodel(backend_names(ARGS.backend), toys=True))
+
+
+def _independent_impact(ref, name, level, r_bounds=(-5.0, 5.0)):
+    """Impact of one nuisance with the independent reference model (scipy, no pymodel code)."""
+    from scipy.optimize import brentq, minimize
+
+    bounds = list(ref.bounds)
+    bounds[0] = r_bounds
+    i = ref.idx[name]
+
+    def prof(fix=None, start=None):
+        free = [k for k in range(len(bounds)) if k != fix]
+        x0 = ref.nominal_point() if start is None else np.array(start, dtype=float)
+        x0[0] = 0.0 if start is None else x0[0]
+
+        def f(z):
+            x = x0.copy()
+            x[free] = z
+            val = ref.nll(x)
+            return val if math.isfinite(val) else 1e30
+        res = minimize(f, x0[free], method="L-BFGS-B", bounds=[bounds[k] for k in free],
+                       options={"ftol": 1e-15, "gtol": 1e-10, "maxiter": 5000})
+        res = minimize(f, res.x, method="Nelder-Mead", options={"xatol": 1e-8, "fatol": 1e-12, "maxiter": 20000})
+        x = x0.copy()
+        x[free] = res.x
+        return float(res.fun), x
+
+    nll0, x0 = prof()
+
+    def at(v):
+        start = x0.copy()
+        start[i] = v
+        return prof(fix=i, start=start)
+
+    th = x0[i]
+    step = 1.0 if name != "cr_stat" else 6.0
+    g = lambda v: 2.0 * (at(v)[0] - nll0) - level
+    lo = brentq(g, th - 3 * step, th, xtol=1e-6)
+    hi = brentq(g, th, th + 3 * step, xtol=1e-6)
+    return {"fit": [lo, th, hi], "r": [at(lo)[1][0], x0[0], at(hi)[1][0]]}
+
+
+@test("fast", "impacts: counting vs an independent scipy calculation; counting/templates vs combineTool Impacts")
+def t_impacts():
+    from inference.impacts import LEVEL_68, impacts
+
+    def one(name):
+        msgs = []
+        for fixture, r_range in (("counting", (-5.0, 5.0)), ("templates", (0.0, 20.0))):
+            fx = load_fixture(f"{fixture}_impacts")["impacts"]
+            model, card, d = fixture_model(fixture, poi_range=r_range)
+            try:
+                with chdir(d):
+                    lik = likelihood(name, model, card)
+            except Skip as exc:
+                msgs.append(f"{fixture} skipped ({exc})")
+                continue
+            res = impacts(lik, Fitter(lik), observed_dataset(model))
+            mine = {p["name"]: p for p in res["params"]}
+            check(all(p["valid"] for p in res["params"]), f"{fixture}: failed impacts {res['flags']}")
+            order = [p["impact"] for p in res["params"]]
+            check(order == sorted(order, reverse=True), "parameters must be sorted by |impact|")
+            (c_lo, _c, c_hi), (m_lo, _m, m_hi) = fx["POIs"][0]["fit"], res["POIs"][0]["fit"]
+            check(abs(c_lo - m_lo) < 3e-3 and abs(c_hi - m_hi) < 3e-3,
+                  f"{fixture}: r interval [{m_lo:.4f}, {m_hi:.4f}] vs Combine [{c_lo:.4f}, {c_hi:.4f}]")
+            worst = 0.0
+            # hfmodel: pyhf's template interpolation is not exactly Combine's (docs/backend-hfmodel.md)
+            tol_r = 1e-2 if name == "hfmodel" else 3e-3
+            for p in fx["params"]:
+                m = mine[p["name"]]
+                width = p["prefit"][2] - p["prefit"][0] if p["prefit"][2] > p["prefit"][0] else 1.0
+                for k in (0, 2):
+                    check(abs(m["fit"][k] - p["fit"][k]) < (5 if name == "hfmodel" else 1) * 2e-3 * width,
+                          f"{fixture} {p['name']}: theta crossing {m['fit'][k]:.5f} vs Combine {p['fit'][k]:.5f}")
+                    check(abs(m["r"][k] - p["r"][k]) < tol_r,
+                          f"{fixture} {p['name']}: r {m['r'][k]:.5f} vs Combine {p['r'][k]:.5f}")
+                check(abs(m["impact"] - p["impact_r"]) < tol_r,
+                      f"{fixture} {p['name']}: impact {m['impact']:.5f} vs Combine {p['impact_r']:.5f}")
+                if "pull" in m:
+                    check(abs(m["prefit"][0] - p["prefit"][0]) < 1e-3 * width, f"{p['name']}: prefit interval")
+                worst = max(worst, abs(m["impact"] - p["impact_r"]))
+            msgs.append(f"{fixture}: max |impact - Combine| {worst:.1e}")
+            if fixture == "counting":
+                ref = ref_counting()
+                wi = 0.0
+                for pname in ("bkg_norm", "cr_stat"):
+                    ind = _independent_impact(ref, pname, LEVEL_68)
+                    m = mine[pname]
+                    wi = max(wi, abs(m["r"][0] - ind["r"][0]), abs(m["r"][2] - ind["r"][2]))
+                    for k in (0, 2):
+                        check(abs(m["fit"][k] - ind["fit"][k]) < 1e-3 * (6.0 if pname == "cr_stat" else 1.0),
+                              f"{pname}: crossing {m['fit'][k]:.5f} vs independent {ind['fit'][k]:.5f}")
+                        # Minuit's EDM goal (tolerance 0.01) limits r to a few 1e-3 here
+                        check(abs(m["r"][k] - ind["r"][k]) < 3e-3,
+                              f"{pname}: r {m['r'][k]:.5f} vs independent {ind['r'][k]:.5f}")
+                msgs.append(f"counting vs independent: max |d r| {wi:.1e}")
+        if all("skipped" in m for m in msgs):
+            raise Skip("; ".join(msgs))
+        return "; ".join(msgs)
+    return per_backend(one, _no_zmodel(backend_names(ARGS.backend)))
+
+
+@test("fast", "2D scan (r, bkg_norm) on templates vs Combine MultiDimFit --algo grid (2DeltaNLL, contours)")
+def t_scan_2d():
+    from inference.scan import LEVELS_2D, contour_lines, profile_scan_2d
+
+    fx = load_fixture("templates_scan2d")["scan2d"]
+    grid = np.array(fx["grid"])
+    xs_all, ys_all = np.unique(grid[:, 0]), np.unique(grid[:, 1])
+    xs, ys = xs_all[::2], ys_all[::2]   # 10 x 10 of Combine's 20 x 20 points
+    cz = {(round(x, 5), round(y, 5)): z for x, y, z in grid}
+    zc = np.array([[cz[(round(x, 5), round(y, 5))] for y in ys] for x in xs])
+
+    def one(name):
+        model, card, d = fixture_model("templates")
+        with chdir(d):
+            lik = likelihood(name, model, card)
+        fitter = Fitter(lik)
+        out = profile_scan_2d(lik, fitter, observed_dataset(model), fx["params"], xs, ys)
+        zm = np.array([p["deltaNLL2"] for p in out["points"]], dtype=float).reshape(len(xs), len(ys))
+        diff = np.abs(zm - zc)
+        # hfmodel: pyhf's interpolation differs slightly from Combine's (docs/backend-hfmodel.md);
+        # same tolerance as the 1D grid comparison of the Combine-fixture tests
+        tol = (0.02 + 0.01 * zc) if name == "hfmodel" else (2e-3 + 1e-3 * zc)
+        check(np.all(diff <= tol), f"2DeltaNLL differs from Combine by up to {diff.max():.4f} "
+                                   f"at {np.unravel_index(diff.argmax(), diff.shape)}")
+        check(abs(out["best_fit"][0] - fx["best_fit"][0]) < 3e-3 and abs(out["best_fit"][1] - fx["best_fit"][1]) < 5e-3,
+              f"best fit {out['best_fit']} vs Combine {fx['best_fit']}")
+        for key, level in LEVELS_2D.items():
+            ref = np.vstack(contour_lines(xs, ys, zc, level))
+            got = np.asarray(out["contours"][key]["y_range"])
+            check(np.all(np.abs(got - [ref[:, 1].min(), ref[:, 1].max()]) < 0.02),
+                  f"{key}% contour y range {got} vs Combine grid {ref[:, 1].min():.3f}..{ref[:, 1].max():.3f}")
+        return f"max |2DeltaNLL - Combine| {diff.max():.1e}"
+    return per_backend(one, _no_zmodel(backend_names(ARGS.backend)))
+
+
+# ----------------------------------------------------------------------------------------
+# FAST: autoMCStats (Barlow-Beeston-lite, mcstats:bb-lite)
+# ----------------------------------------------------------------------------------------
+
+# Combine's setupBinPars for examples/mcstats (text2workspace.py output, Combine 137dbced):
+# name -> (kind, nominal value, range lo, range hi) with ranges rounded as Combine prints them
+MCSTATS_COMBINE_PARAMS = {
+    **{f"prop_binch1_bin{j}": ("total", 0.0, -7.0, 7.0) for j in range(4)},
+    "prop_binch1_bin4_sig": ("gauss", 0.0, -7.0, 7.0), "prop_binch1_bin4_bkg1": ("gauss", 0.0, -7.0, 7.0),
+    "prop_binch1_bin4_bkg2": ("poisson", 1.0, 0.00, 30.85), "prop_binch1_bin5_sig": ("gauss", 0.0, -7.0, 7.0),
+    "prop_binch1_bin5_bkg1": ("poisson", 6.0, 0.03, 43.60), "prop_binch1_bin5_bkg2": ("poisson", 1.0, 0.00, 30.85),
+    "prop_binch1_bin6_sig": ("poisson", 4.0, 0.00, 38.96), "prop_binch1_bin6_bkg1": ("gauss", 0.0, -7.0, 7.0),
+    "prop_binch1_bin6_bkg2": ("gauss", 0.0, -7.0, 7.0), "prop_binch1_bin7_bkg1": ("poisson", 4.0, 0.00, 38.96),
+    **{f"prop_binch2_bin{j}": ("total", 0.0, -7.0, 7.0) for j in range(4)},
+    "prop_binch2_bin4_sig": ("poisson", 2.0, 0.00, 33.79), "prop_binch2_bin4_bkg": ("poisson", 2.0, 0.00, 33.79),
+}
+
+
+def _mcstats_card(tag, stats_lines, extra=""):
+    """A copy of the mcstats example card with other autoMCStats lines (same mcstats.root)."""
+    src = WORK.example("mcstats")
+    with open(os.path.join(src, "card.txt")) as handle:
+        text = "".join(l for l in handle if "autoMCStats" not in l)
+    return write_card("mcstats", f"{tag}.txt", text + extra + stats_lines + "\n",
+                      files=[os.path.join(src, "mcstats.root")])
+
+
+@test("fast", "autoMCStats grammar/IR: parameters, kinds and ranges = Combine setupBinPars; variants")
+def t_mcstats_grammar():
+    model, card, d = fixture_model("mcstats")
+    got = {bp.param: bp for ch in model.channels for bp in ch.mcstats.params}
+    check(list(got) == list(MCSTATS_COMBINE_PARAMS), f"parameter list/order {list(got)}")
+    for name, (kind, value, lo, hi) in MCSTATS_COMBINE_PARAMS.items():
+        p = model.parameters[name]
+        check(got[name].kind == kind, f"{name}: kind {got[name].kind} vs Combine {kind}")
+        check(p.value == value and round(p.lo, 2) == lo and round(p.hi, 2) == hi,
+              f"{name}: value/range {p.value} [{p.lo:.3f}, {p.hi:.3f}] vs Combine {value} [{lo}, {hi}]")
+        want = I.CONSTRAINT_POISSON if kind == "poisson" else I.CONSTRAINT_GAUSS
+        check(p.constraint.kind == want and p.constraint.center == value and p.role == I.ROLE_NUISANCE,
+              f"{name}: constraint {p.constraint}")
+        if kind == "poisson":
+            check(got[name].n_eff == value, f"{name}: n_eff {got[name].n_eff}")
+    check(model.groups.get("autoMCStats") == list(MCSTATS_COMBINE_PARAMS), "group autoMCStats")
+    check("mcstats:bb-lite" in model.features(), "feature string")
+    ch1, ch2 = model.channel("ch1").mcstats, model.channel("ch2").mcstats
+    check((ch1.threshold, ch1.include_signal, ch1.hist_mode) == (10.0, False, 1), f"ch1 flags {ch1}")
+    check((ch2.threshold, ch2.include_signal, ch2.hist_mode) == (5.0, True, 1), f"ch2 flags {ch2}")
+    # JSON round trip of the IR
+    check(I.ir_from_dict(json.loads(json.dumps(model.to_dict()))) == model, "IR JSON round trip")
+    # wildcard channel pattern; include-signal changes the ch1 decision in bin 4 (n_eff 9 -> 11 > 10)
+    with chdir(WORK.tmp("mcstats")):
+        m = build_ir(_mcstats_card("wild", "* autoMCStats 10"))
+        check(all(ch.mcstats is not None and ch.mcstats.threshold == 10.0 for ch in m.channels), "wildcard")
+        m = build_ir(_mcstats_card("incsig", "ch1 autoMCStats 10 1"))
+        kinds = {bp.bin: bp.kind for bp in m.channel("ch1").mcstats.params if bp.bin == 4}
+        check(kinds == {4: "total"} and m.channel("ch2").mcstats is None, f"include-signal: bin 4 {kinds}")
+        m = build_ir(_mcstats_card("neg", "ch1 autoMCStats -1"))
+        check(m.channel("ch1").mcstats is not None and not m.channel("ch1").mcstats.params,
+              "negative threshold: CMSHistFunc semantics, no bin parameters")
+        for tag, line in (("hist2", "ch1 autoMCStats 10 0 2"), ("hist0", "ch1 autoMCStats 10 0 0")):
+            try:
+                build_ir(_mcstats_card(tag, line))
+                check(False, f"{line}: not refused")
+            except UnsupportedFeature:
+                pass
+    # counting channels cannot have autoMCStats in Combine (no CMSHistFunc)
+    cnt = write_card("mcstats", "counting.txt", """
+imax 1
+jmax 1
+kmax *
+bin a
+observation 5
+bin a a
+process s b
+process 0 1
+rate 1 4
+a autoMCStats 0
+""")
+    try:
+        build_ir(cnt)
+        check(False, "autoMCStats on a counting channel not refused")
+    except UnsupportedFeature:
+        pass
+    return f"{len(got)} parameters as Combine; variants ok"
+
+
+@test("fast", "autoMCStats oracle vs an independent evaluation of the TH1 templates (total/poisson/gauss bins)")
+def t_mcstats_oracle():
+    import ROOT
+
+    model, card, d = fixture_model("mcstats")
+    lik = SemanticLikelihood(model)
+    f = ROOT.TFile.Open(os.path.join(d, "mcstats.root"))
+
+    def th1(path):
+        h = f.Get(path)
+        return (np.array([h.GetBinContent(i + 1) for i in range(h.GetNbinsX())]),
+                np.array([h.GetBinError(i + 1) for i in range(h.GetNbinsX())]))
+
+    rng = np.random.default_rng(11)
+    worst = 0.0
+    for _ in range(10):
+        v = {n: p.value for n, p in model.parameters.items()}
+        v["r"] = rng.uniform(0.0, 3.0)
+        for n in ("lumi", "bkg1_norm", "bkg2_norm", "bkg_shape"):
+            v[n] = rng.normal(0.0, 1.0)
+        for n, (kind, value, lo, hi) in MCSTATS_COMBINE_PARAMS.items():
+            v[n] = value * rng.uniform(0.3, 2.0) if kind == "poisson" else rng.normal(0.0, 1.5)
+        x = np.array([v[n] for n in lik.names])
+        exp = lik.expected_counts(x)
+        # ch1: C_p = lnN factors (x r for sig); yield = C_p * template (+ BB terms)
+        c = {"sig": v["r"] * 1.025 ** v["lumi"], "bkg1": 1.025 ** v["lumi"] * 1.10 ** v["bkg1_norm"],
+             "bkg2": 1.025 ** v["lumi"] * 1.20 ** v["bkg2_norm"]}
+        h = {p: th1(f"ch1/{p}") for p in c}
+        nu = sum(c[p] * np.maximum(h[p][0], 1e-9) for p in c)
+        for j in range(4):
+            nu[j] += v[f"prop_binch1_bin{j}"] * math.sqrt(sum((c[p] * h[p][1][j]) ** 2 for p in c))
+        for name, (kind, value, lo, hi) in MCSTATS_COMBINE_PARAMS.items():
+            if not name.startswith("prop_binch1_") or kind == "total":
+                continue
+            j, p = int(name.split("_")[2][3:]), name.split("_")[3]
+            nu[j] += (v[name] / value - 1.0) * c[p] * h[p][0][j] if kind == "poisson" else v[name] * c[p] * h[p][1][j]
+        worst = max(worst, float(np.max(np.abs(exp["ch1"] - nu) / np.maximum(np.abs(nu), 1e-9))))
+        # ch2: bkg shape systematic, CMSHistFunc hist-mode 1 (up/down scaled to the nominal integral,
+        # no renormalisation) with asymPow(kd, ku) of the integrals; bins 0-3 total, bin 4 Poisson
+        sig, bkg, up, dn = th1("ch2/sig"), th1("ch2/bkg"), th1("ch2/bkg_bkg_shapeUp")[0], th1("ch2/bkg_bkg_shapeDown")[0]
+        t = v["bkg_shape"]
+        ku, kd = up.sum() / bkg[0].sum(), dn.sum() / bkg[0].sum()
+        s = 1.0 if t >= 1 else -1.0 if t <= -1 else 0.125 * t * (t * t * (3 * t * t - 10) + 15)
+        hb = bkg[0] + 0.5 * t * ((up / ku - dn / kd) + (up / ku + dn / kd - 2 * bkg[0]) * s)
+        hb = np.maximum(hb, 1e-9)
+        cb = 1.025 ** v["lumi"] * float(REF_asym_pow(t, kd, ku))
+        cs = v["r"] * 1.025 ** v["lumi"]
+        nu2 = cs * sig[0] + cb * hb
+        for j in range(4):
+            nu2[j] += v[f"prop_binch2_bin{j}"] * math.sqrt((cs * sig[1][j]) ** 2 + (cb * bkg[1][j]) ** 2)
+        nu2[4] += (v["prop_binch2_bin4_sig"] / 2 - 1) * cs * sig[0][4] + (v["prop_binch2_bin4_bkg"] / 2 - 1) * cb * hb[4]
+        worst = max(worst, float(np.max(np.abs(exp["ch2"] - nu2) / np.maximum(np.abs(nu2), 1e-9))))
+    f.Close()
+    check(worst < 1e-12, f"oracle vs independent yields: max rel diff {worst:.2e}")
+    return f"max rel yield diff {worst:.1e}"
+
+
+def REF_asym_pow(theta, kd, ku):
+    """Combine asymPow written out independently (CombineMathFuncs.h logKappaForX)."""
+    if abs(theta) >= 0.5:
+        return ku ** theta if theta >= 0 else kd ** (-theta)
+    lhi, llo = math.log(ku), -math.log(kd)
+    x2 = 2 * theta
+    alpha = 0.125 * x2 * (x2 * x2 * (3 * x2 * x2 - 10) + 15)
+    return math.exp(theta * (0.5 * (lhi + llo) + alpha * 0.5 * (lhi - llo)))
+
+
+@test("fast", "autoMCStats backends vs oracle: NLL and yields (incl. floored bins); hfmodel exact for symmetric kappas")
+def t_mcstats_backends():
+    model, card, d = fixture_model("mcstats")
+    sym = copy.deepcopy(model)
+    for ch in sym.channels:  # template norm terms symmetric: hfmodel's normsys code1 is then exact
+        for proc in ch.processes:
+            for s in proc.shape.systs:
+                ku, kd = sum(s.up) / sum(proc.shape.contents), sum(s.down) / sum(proc.shape.contents)
+                s.down = list(np.asarray(s.down) / (ku * kd))
+    names = [n for n in backend_names(ARGS.backend) if n != "semantic"]
+    msgs = []
+    for label, m in (("mcstats", model), ("mcstats-symmetric-kappas", sym)):
+        oracle = SemanticLikelihood(m)
+        rng = np.random.default_rng(5)
+        pts = []
+        for k in range(12):
+            x = oracle.nominal_values().copy()
+            for i, p in enumerate(oracle.parameters):
+                if p.role == I.ROLE_POI:
+                    x[i] = rng.uniform(0.0, 3.0)
+                elif p.constraint is not None and p.constraint.kind == I.CONSTRAINT_POISSON:
+                    x[i] = p.value * rng.uniform(0.3, 2.0)
+                elif p.floating:
+                    x[i] = rng.normal(0.0, 1.5 if k < 9 else 3.5)  # large |x| drives bins to the floor
+            pts.append(x)
+
+        def one(name):
+            with chdir(d):
+                lik = likelihood(name, m, card)
+            notes = getattr(lik, "notes", [])
+            if name == "hfmodel" and label == "mcstats":
+                check(any("asymmetric lnN" in n for n in notes), "hfmodel must declare the asymPow approximation")
+                return "approximate (declared asymPow note); exactness tested on the symmetric-kappa model"
+            da, db = observed_dataset(m), observed_dataset(m)
+            worst_nll = worst_y = 0.0
+            for x in pts:
+                a, b = lik.nll(x, da), oracle.nll(x, db)
+                worst_nll = max(worst_nll, abs(a - b) / max(1.0, abs(b)))
+                ea, eb = lik.expected_by_process(x), oracle.expected_by_process(x)
+                for ch in eb:
+                    for p in eb[ch]:
+                        worst_y = max(worst_y, float(np.max(np.abs(ea[ch][p] - eb[ch][p])
+                                                            / np.maximum(np.abs(eb[ch][p]), 1e-9))))
+            check(worst_nll < 1e-10 and worst_y < 1e-10, f"{label}/{name}: NLL {worst_nll:.2e}, yields {worst_y:.2e}")
+            return f"NLL {worst_nll:.0e}, yields {worst_y:.0e}"
+        msgs.append(f"{label}: " + per_backend(one, names))
+    return " | ".join(msgs)
+
+
+@test("fast", "autoMCStats toys: prior toys sample the Poisson gammas inside their ranges; Asimov refit at nominal")
+def t_mcstats_toys():
+    from inference.toys import ToyConfig, generate_toys
+
+    model, card, d = fixture_model("mcstats")
+    lik = SemanticLikelihood(model)
+    fitter = Fitter(lik)
+    toys, _ = generate_toys(lik, fitter, ToyConfig(ntoys=20), np.random.default_rng(3))
+    pois = [p for p in model.parameters.values() if p.origin == "autoMCStats" and p.constraint.kind == "poisson"]
+    for t in toys:
+        for p in pois:
+            check(p.lo <= t.truth[p.name] <= p.hi, f"{p.name} = {t.truth[p.name]} outside [{p.lo}, {p.hi}]")
+    asimov, _ = generate_toys(lik, fitter, ToyConfig(ntoys=-1, expect_signal=1.0), np.random.default_rng(3))
+    res = fitter.fit(asimov[0])
+    check(res.valid, f"Asimov fit failed: {res.status}")
+    dev = max(abs(res.values[lik.index[n]] - model.parameters[n].value) for n in MCSTATS_COMBINE_PARAMS)
+    check(abs(res.values[lik.poi_index] - 1.0) < 1e-3 and dev < 2e-2, f"Asimov fit r {res.values[lik.poi_index]}, "
+          f"max |BB parameter - nominal| {dev:.3g}")
+    return f"20 prior toys; Asimov r_hat {res.values[lik.poi_index]:.4f}, max BB deviation {dev:.1e}"
+
+
+
+# ----------------------------------------------------------------------------------------
+# FAST: multi-dimensional channels (obs:multidim, examples/two_dim)
+# ----------------------------------------------------------------------------------------
+
+def _two_dim_reference():
+    """Independent 2D expectation of examples/two_dim: rate * outer(p_x, p_t) from the
+    example's own analytic fractions, and the data histogrammed with numpy from the RooDataSet."""
+    import importlib.util
+
+    import ROOT
+
+    d = WORK.example("two_dim")
+    spec = importlib.util.spec_from_file_location("two_dim_inputs", os.path.join(d, "make_inputs.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    f = ROOT.TFile.Open(os.path.join(d, "workspace.root"))
+    ds = f.Get("w").data("data_obs_unbinned")
+    pts = np.array([[ds.get(i).getRealValue("obs_p"), ds.get(i).getRealValue("obs_t")] for i in range(ds.numEntries())])
+    f.Close()
+    n, _, _ = np.histogram2d(pts[:, 0], pts[:, 1], bins=[mod.P_EDGES, mod.T_EDGES])
+    shapes = {p: np.outer(mod.p_fractions(p), mod.t_fractions(p)).reshape(-1) for p in mod.RATES}
+    return mod, n.reshape(-1), shapes, pts
+
+
+@test("fast", "2D grammar/IR: axes, row-major bins = numpy histogram2d, refusals (TH2, 2D shape systs, 1D data)")
+def t_two_dim_ir():
+    mod, n_ref, shapes, _ = _two_dim_reference()
+    model, card, d = fixture_model("two_dim")
+    ch = model.channels[0]
+    check(ch.observable.ndim == 2 and [a.name for a in ch.observable.axes] == ["obs_p", "obs_t"], "axes")
+    check(ch.observable.shape == (20, 9) and ch.observable.nbins == 180, f"shape {ch.observable.shape}")
+    check(np.allclose(ch.observable.bin_volumes(), np.multiply.outer(np.diff(mod.P_EDGES), np.diff(mod.T_EDGES)).reshape(-1)),
+          "bin volumes")
+    check(np.array_equal(np.asarray(ch.data.counts), n_ref), "data_obs counts != numpy histogram2d (row-major)")
+    check("obs:multidim" in model.features(), "feature obs:multidim")
+    for proc in ch.processes:
+        check(np.allclose(proc.shape.contents, shapes[proc.name], rtol=1e-6, atol=1e-12), f"{proc.name} fractions")
+    unb, _, _ = fixture_model("two_dim_unbinned")
+    check(np.asarray(unb.channels[0].data.values).shape == (int(n_ref.sum()), 2), "unbinned values (n, 2)")
+    refused = []
+    text_1d = open(os.path.join(d, "card.txt")).read().replace("w:data_obs\n", "w:data_obs_p\n")
+    for fname, text in (("card_th2.txt", None), ("card_syst.txt", None), ("card_1d.txt", text_1d)):
+        path = os.path.join(d, fname)
+        if text is not None:
+            with open(path, "w") as handle:
+                handle.write(text)
+        try:
+            with chdir(d):
+                build_ir(fname)
+            raise AssertionError(f"{fname} must be refused")
+        except UnsupportedFeature as exc:
+            refused.append(f"{fname}: {exc}")
+    check("TH1" in refused[0] and "text2workspace" in refused[1] and "obs_t" in refused[2], f"refusal reasons {refused}")
+    refused = [r[:70] for r in refused]
+    # bundle round trip
+    from modelspec.bundle import load_bundle, save_bundle
+
+    path = save_bundle(model, os.path.join(WORK.tmp("two_dim_bundle"), "b.json"))
+    back = load_bundle(path)
+    check(back.channels[0].observable == ch.observable and back.channels[0].data == ch.data, "bundle round trip")
+    x = SemanticLikelihood(model).nominal_values()
+    check(abs(SemanticLikelihood(back).nll(x, observed_dataset(back)) - SemanticLikelihood(model).nll(
+        x, observed_dataset(model))) < 1e-12, "bundle NLL")
+    return "; ".join(refused)
+
+
+@test("fast", "2D oracle vs an independent numpy NLL; backends vs oracle (NLL, yields) at random points")
+def t_two_dim_oracle_backends():
+    mod, n_ref, shapes, _ = _two_dim_reference()
+    model, card, d = fixture_model("two_dim")
+    oracle = SemanticLikelihood(model)
+    data = observed_dataset(model)
+    pts = random_points(oracle, 10, np.random.default_rng(11))
+    for x in pts:
+        v = oracle.values_dict(x)
+        nu = (mod.RATES["sig"] * v["r"] * 1.10 ** v["lumi"] * shapes["sig"]
+              + mod.RATES["dio"] * 1.10 ** v["lumi"] * 1.05 ** v["dioN"] * shapes["dio"]
+              + mod.RATES["cosmic"] * v["csm_scale"] * shapes["cosmic"])
+        ref = nu.sum() - np.sum(n_ref * np.log(nu)) + 0.5 * (v["lumi"] ** 2 + v["dioN"] ** 2)
+        check(abs(oracle.nll(x, data) - ref) < 1e-9 * max(1, abs(ref)), f"oracle {oracle.nll(x, data)} vs {ref}")
+
+    def one(name):
+        with chdir(d):
+            lik = likelihood(name, model, card)
+        data_b = observed_dataset(model)
+        for x in pts:
+            a, b = lik.nll(x, data_b), oracle.nll(x, data)
+            check(abs(a - b) < 1e-9 * max(1.0, abs(b)), f"NLL {a} vs oracle {b}")
+            ea, eb = lik.expected_by_process(x)["sr"], oracle.expected_by_process(x)["sr"]
+            for p in eb:
+                check(np.allclose(ea[p], eb[p], rtol=1e-9, atol=1e-12), f"yields {p}")
+    return per_backend(one, [n for n in backend_names(ARGS.backend) if n != "semantic"])
+
+
+@test("fast", "2D backends vs Combine's CachingSimNLL: NLL differences at the fixture points (binned, param, unbinned)")
+def t_two_dim_combine_nll():
+    msgs = []
+    for fixture in ("two_dim", "two_dim_param", "two_dim_unbinned"):
+        fx = load_fixture(fixture)
+        model, card, d = fixture_model(fixture)
+
+        def one(name):
+            with chdir(d):
+                lik = likelihood(name, model, card)
+            data = observed_dataset(model)
+            base, worst = None, 0.0
+            for pt in fx["nll_points"]:
+                x = lik.nominal_values().copy()
+                for k, val in pt["params"].items():
+                    check(k in lik.index, f"Combine parameter {k} is not in the model")
+                    x[lik.index[k]] = val
+                val = lik.nll(x, data)
+                if base is None:
+                    base = (val, pt["nll"])
+                    continue
+                dd = abs((val - base[0]) - (pt["nll"] - base[1]))
+                worst = max(worst, dd)
+                check(dd < 1e-7 * max(1.0, abs(pt["nll"] - base[1])), f"{fixture}: dNLL differs by {dd:.3g} at {pt}")
+            return f"max {worst:.1e}"
+        msgs.append(f"{fixture}: " + per_backend(one, backend_names(ARGS.backend)))
+    return " | ".join(msgs)
+
+
+@test("fast", "2D toys: binned toy means = expected per flattened bin, Asimov = expected; unbinned 2D sampling")
+def t_two_dim_toys():
+    from inference.toys import ToyConfig, generate_toys
+    from scipy.stats import chi2
+
+    def one(name, fixture):
+        model, card, d = fixture_model(fixture)
+        with chdir(d):
+            lik = likelihood(name, model, card)
+        fitter = Fitter(lik)
+        cfg = ToyConfig(ntoys=150, expect_signal=1.0, frequentist=True, bypass_fit=True)
+        toys, _ = generate_toys(lik, fitter, cfg, np.random.default_rng(7))
+        x = np.array([toys[0].truth[k] for k in lik.names])
+        mu = lik.expected_counts(x)["sr"]
+        asimov, _ = generate_toys(lik, fitter, ToyConfig(ntoys=-1, expect_signal=1.0), np.random.default_rng(7))
+        ch = model.channels[0]
+        if ch.data.kind == "binned":
+            c = np.array([t.main["sr"].counts for t in toys])
+            check(c.shape == (150, 180), f"toy shape {c.shape}")
+            n = c.sum(axis=0)
+            check(np.allclose(asimov[0].main["sr"].counts, mu), "Asimov != expected")
+        else:
+            vals = [np.asarray(t.main["sr"].values) for t in toys]
+            check(all(v.ndim == 2 and v.shape[1] == 2 for v in vals), "unbinned toys must be (n, 2)")
+            edges = [np.asarray(a.edges) for a in ch.observable.axes]
+            n = np.histogramdd(np.concatenate(vals), bins=edges)[0].reshape(-1)
+            a = asimov[0].main["sr"]
+            check(np.allclose(a.values, ch.observable.bin_centers()) and np.allclose(a.weights, mu), "unbinned Asimov")
+        # Pearson chi2 of the summed toys against 150 * expected (bins with enough expectation)
+        e = 150 * mu
+        keep = e > 5
+        stat = float(np.sum((n[keep] - e[keep]) ** 2 / e[keep]))
+        p = chi2.sf(stat, keep.sum())
+        check(p > 1e-4, f"toys vs expected: chi2 {stat:.1f} / {keep.sum()} bins (p = {p:.2g})")
+        return f"{fixture} chi2/ndf {stat:.0f}/{keep.sum()}"
+
+    msgs = []
+    for fixture in ("two_dim", "two_dim_unbinned"):
+        msgs.append(per_backend(one, backend_names(ARGS.backend), fixture))
+    return " | ".join(msgs)
 
 
 # ----------------------------------------------------------------------------------------

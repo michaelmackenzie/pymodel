@@ -21,8 +21,19 @@ Semantics follow CMS Combine (text2workspace.py with the default physics model):
 * template ``shape`` systematics:     vertical morphing of the normalised templates with
                                       Combine's smooth step, plus an asymPow normalisation
                                       term with kappa = integral(up|down) / integral(nominal)
+* ``shape`` systematics on RooAbsPdfs (``PdfSyst``, ``Shape.pdf_morph``): RooHistPdf
+  nominal -> the template morph of the normalised histograms (FastVerticalInterpHistPdf2);
+  any other pdf -> VerticalInterpPdf, the morph of the *un-normalised* pdf values divided by
+  the same morph of their integrals.  No normalisation effect (the Up/Down ``_norm`` objects
+  are ignored, as in Combine).  See ``semantics.vertical_pdf_fractions``.
 * constraint terms are listed once per parameter (``Constraint``); every constraint has a
   global observable whose nominal value is ``Constraint.center``.
+* ``autoMCStats`` (``Channel.mcstats``): Barlow-Beeston-lite bin parameters of
+  CMSHistErrorPropagator, see ``MCStats`` and ``semantics.bb_lite_expected``.
+* multi-dimensional channels (``Observable.axes``, data_obs a RooDataHist/RooDataSet over
+  several variables): the binned likelihood runs over the flattened product bins (row-major),
+  pdfs are evaluated at the N-D bin centres times the bin volume; unbinned data are N-D
+  points.  Everything else (yields, templates, constraints) is unchanged.
 
 All arrays are plain python lists of floats so the IR serialises to JSON directly.
 """
@@ -123,6 +134,35 @@ class TemplateSyst:
     kind: str = "shape"  # "shape" (vertical morph) or "shapeN" (log-vertical morph)
 
 
+# Shape.pdf_morph: how Combine (ShapeTools.getPdf) morphs a RooAbsPdf shape
+PDF_MORPH_VERTICAL = "vertical"  # VerticalInterpPdf (any RooAbsPdf that is not a RooHistPdf)
+PDF_MORPH_HIST = "hist"          # FastVerticalInterpHistPdf2 (fixed RooHistPdf nominal and variations)
+
+
+@dataclass
+class PdfSyst:
+    """A ``shape``/``shapeN`` systematic on a RooAbsPdf shape (datacard ``shapes`` pattern
+    with ``$SYSTEMATIC``).
+
+    ``up``/``down`` reference the varied pdfs, ``scale`` is the datacard entry (the morphing
+    coefficient is scale * theta; the smooth/quadratic region is min(1, scales of the process)).
+    For fixed shapes (``Shape.contents`` set) ``up_contents``/``down_contents`` hold the varied
+    pdfs on the channel binning (same convention as ``Shape.contents``) and
+    ``up_integral``/``down_integral`` their un-normalised integrals over the observable range
+    (the VerticalInterpPdf normalisation).  Up/Down ``_norm`` objects play no role.
+    """
+
+    param: str
+    up: RooRef
+    down: RooRef
+    scale: float = 1.0
+    kind: str = "shape"  # "shape" or "shapeN"
+    up_contents: List[float] = field(default_factory=list)
+    down_contents: List[float] = field(default_factory=list)
+    up_integral: float = 0.0
+    down_integral: float = 0.0
+
+
 @dataclass
 class Shape:
     """Process shape.
@@ -131,8 +171,11 @@ class Shape:
       "counting"   -> no shape (single-bin counting channel)
       "template"   -> histogram: ``contents`` (+ ``sumw2``) on the channel binning
       "parametric" -> RooAbsPdf referenced by ``ref``; ``params`` lists the names of the IR
-                      parameters it depends on.  If the pdf is a RooHistPdf with no floating
-                      parameters, ``contents`` holds its histogram on the channel binning.
+                      parameters it depends on.  If neither the pdf nor its ``pdf_systs``
+                      variations depend on floating parameters, ``contents`` holds its
+                      histogram on the channel binning (see ``Channel.bin_integration``).
+                      ``pdf_systs`` are its shape systematics, morphed as ``pdf_morph`` says;
+                      ``raw_integral`` is the un-normalised integral of the nominal pdf.
       "envelope"   -> RooMultiPdf referenced by ``ref`` with category ``category``
     """
 
@@ -143,7 +186,9 @@ class Shape:
     ref: Optional[RooRef] = None
     params: List[str] = field(default_factory=list)
     category: str = ""
-    syst_refs: Dict[str, List[RooRef]] = field(default_factory=dict)  # param -> [up, down] pdfs
+    pdf_systs: List[PdfSyst] = field(default_factory=list)
+    pdf_morph: str = ""        # PDF_MORPH_* when pdf_systs is not empty
+    raw_integral: float = 0.0  # fixed shapes with pdf_systs: integral of the un-normalised nominal pdf
 
 
 @dataclass
@@ -156,11 +201,82 @@ class Process:
 
 
 @dataclass
-class Observable:
+class Axis:
+    """One axis of a multi-dimensional observable (a RooRealVar with its binning)."""
+
     name: str
     lo: float
     hi: float
-    edges: List[float] = field(default_factory=list)  # binning (always set; counting: [0, 1])
+    edges: List[float]
+
+
+@dataclass
+class Observable:
+    """The observable of a channel.
+
+    1D (``axes`` empty): ``name``/``lo``/``hi``/``edges`` (always set; counting: [0, 1]).
+
+    N-D (``axes`` holds the N >= 2 axes in the order of the data_obs variables): the bins are
+    the cells of the product of the axis binnings, flattened in row-major order (the last
+    axis varies fastest, like numpy's C order and RooDataHist's internal index): cell
+    (i_0, ..., i_{N-1}) is bin ``np.ravel_multi_index((i_0, ...), shape)``.  Every per-bin
+    array of the IR (counts, template contents, pdf fractions) uses this order.  ``name`` is
+    the comma-separated axis names, ``edges`` is empty, ``lo``/``hi`` are 0 and the number
+    of bins (the range of the flattened bin index).  Use ``nbins``, ``bin_volumes()`` and
+    ``bin_centers()``, which work for both.
+    """
+
+    name: str
+    lo: float
+    hi: float
+    edges: List[float] = field(default_factory=list)
+    axes: List[Axis] = field(default_factory=list)
+
+    @staticmethod
+    def multi(axes: List[Axis]) -> "Observable":
+        if len(axes) < 2:
+            raise ValueError("a multi-dimensional observable needs at least two axes")
+        nbins = 1
+        for a in axes:
+            nbins *= len(a.edges) - 1
+        return Observable(name=",".join(a.name for a in axes), lo=0.0, hi=float(nbins), edges=[], axes=list(axes))
+
+    @property
+    def ndim(self) -> int:
+        return len(self.axes) if self.axes else 1
+
+    def axis_list(self) -> List[Axis]:
+        """The axes (1D: one axis made of name/lo/hi/edges)."""
+        return list(self.axes) if self.axes else [Axis(self.name, self.lo, self.hi, list(self.edges))]
+
+    @property
+    def shape(self) -> tuple:
+        return tuple(len(a.edges) - 1 for a in self.axis_list())
+
+    @property
+    def nbins(self) -> int:
+        n = 1
+        for k in self.shape:
+            n *= k
+        return n
+
+    def bin_volumes(self):
+        """Width (1D) or volume (N-D: product of the axis widths) of every flattened bin."""
+        import numpy as np
+
+        vol = np.ones(1)
+        for a in self.axis_list():
+            vol = np.multiply.outer(vol, np.diff(np.asarray(a.edges, dtype=float)))
+        return vol.reshape(-1)
+
+    def bin_centers(self):
+        """Array (nbins, ndim) of the bin centres, rows in the flattened bin order."""
+        import numpy as np
+
+        cs = [0.5 * (np.asarray(a.edges[:-1], dtype=float) + np.asarray(a.edges[1:], dtype=float))
+              for a in self.axis_list()]
+        grid = np.meshgrid(*cs, indexing="ij")
+        return np.column_stack([g.reshape(-1) for g in grid])
 
 
 @dataclass
@@ -168,8 +284,9 @@ class ChannelData:
     """Observed data of one channel.
 
     kind "count":    ``counts`` has one entry
-    kind "binned":   ``counts`` per bin of Observable.edges
-    kind "unbinned": ``values`` (and ``weights`` if weighted)
+    kind "binned":   ``counts`` per bin of the observable (N-D: flattened, see Observable)
+    kind "unbinned": ``values`` (and ``weights`` if weighted); N-D: one [x_0, ..., x_{N-1}]
+                     list per event
     """
 
     kind: str
@@ -184,6 +301,43 @@ class ChannelData:
         return float(sum(self.counts))
 
 
+# autoMCStats bin-parameter kinds (Combine CMSHistErrorPropagator::setupBinPars bintypes 1, 2, 3)
+MCSTATS_TOTAL = "total"      # one Gaussian x per bin: nu_i += x * sqrt(sum_p (C_p e_pi)^2)
+MCSTATS_POISSON = "poisson"  # per process: nu_pi *= gamma / n_eff, gamma ~ Poisson(n_eff | gamma)
+MCSTATS_GAUSS = "gauss"      # per process: nu_pi += x * C_p e_pi
+
+
+@dataclass
+class MCStatsParam:
+    """One autoMCStats parameter of bin ``bin`` (index into the channel bins).
+
+    ``process`` is empty for MCSTATS_TOTAL; ``n_eff`` is the rounded effective MC event count
+    of the process (the gamma divisor and Poisson global observable) for MCSTATS_POISSON."""
+
+    bin: int
+    kind: str
+    param: str
+    process: str = ""
+    n_eff: float = 0.0
+
+
+@dataclass
+class MCStats:
+    """``<channel> autoMCStats threshold [include-signal] [hist-mode]`` of one channel.
+
+    The classification of the bins (``params``) is made once, at the nominal parameter
+    values, exactly as Combine's setupBinPars; e_pi = sqrt(Shape.sumw2) of the templates.
+    In such a channel every process is a TH1 template evaluated like CMSHistFunc (see
+    ``semantics.cmshist_template``): the yield is the template integral (the datacard rate is
+    not used), up/down templates are rescaled to the nominal integral (hist-mode 1), and
+    morphed bins are floored at 1e-9 without renormalisation."""
+
+    threshold: float
+    include_signal: bool = False
+    hist_mode: int = 1
+    params: List[MCStatsParam] = field(default_factory=list)
+
+
 @dataclass
 class Channel:
     name: str
@@ -192,6 +346,7 @@ class Channel:
     processes: List[Process]
     bin_integration: str = "center"  # parametric pdfs on binned data: "center" (Combine/RooFit) or "integral"
     obs_ref: Optional[RooRef] = None  # RooRealVar of the observable when shapes come from a workspace
+    mcstats: Optional[MCStats] = None  # autoMCStats configuration (None: not used)
 
     @property
     def is_counting(self) -> bool:
@@ -226,6 +381,10 @@ class ModelIR:
         feats = set()
         for ch in self.channels:
             feats.add(f"data:{ch.data.kind}")
+            if ch.observable.ndim > 1:
+                feats.add("obs:multidim")  # N-D observable (flattened bins / N-D events)
+            if ch.mcstats is not None:
+                feats.add("mcstats:bb-lite")
             if ch.data.kind == "unbinned" and ch.data.weights:
                 feats.add("data:weighted")
             for proc in ch.processes:
@@ -234,8 +393,10 @@ class ModelIR:
                     feats.add("shape:parametric-histogram")
                 for syst in proc.shape.systs:
                     feats.add(f"syst:{syst.kind}")
-                if proc.shape.syst_refs:
-                    feats.add("syst:pdf-morph")
+                for syst in proc.shape.pdf_systs:
+                    # syst:pdf-morph (VerticalInterpPdf) / syst:histpdf-morph (RooHistPdf), N: shapeN
+                    prefix = "histpdf" if proc.shape.pdf_morph == PDF_MORPH_HIST else "pdf"
+                    feats.add(f"syst:{prefix}-morph" + ("N" if syst.kind == "shapeN" else ""))
                 for term in proc.norm_terms:
                     feats.add(f"norm:{term.kind}")
         for par in self.parameters.values():
@@ -257,6 +418,14 @@ def _ref_from_dict(d):
     return None if d is None else RooRef(**d)
 
 
+def _mcstats_from_dict(d):
+    if d is None:
+        return None
+    d = dict(d)
+    d["params"] = [MCStatsParam(**p) for p in d.get("params", [])]
+    return MCStats(**d)
+
+
 def ir_from_dict(d: dict) -> ModelIR:
     if d.get("ir_version") != IR_VERSION:
         raise ValueError(f"Unsupported model IR version {d.get('ir_version')} (expected {IR_VERSION})")
@@ -267,7 +436,8 @@ def ir_from_dict(d: dict) -> ModelIR:
             s = dict(p["shape"])
             s["systs"] = [TemplateSyst(**t) for t in s.get("systs", [])]
             s["ref"] = _ref_from_dict(s.get("ref"))
-            s["syst_refs"] = {k: [RooRef(**r) for r in v] for k, v in s.get("syst_refs", {}).items()}
+            s["pdf_systs"] = [PdfSyst(**{**t, "up": RooRef(**t["up"]), "down": RooRef(**t["down"])})
+                              for t in s.get("pdf_systs", [])]
             terms = []
             for t in p["norm_terms"]:
                 t = dict(t)
@@ -275,13 +445,16 @@ def ir_from_dict(d: dict) -> ModelIR:
                 terms.append(NormTerm(**t))
             procs.append(Process(name=p["name"], is_signal=p["is_signal"], rate=p["rate"],
                                  shape=Shape(**s), norm_terms=terms))
+        obs = dict(ch["observable"])
+        obs["axes"] = [Axis(**a) for a in obs.get("axes", [])]
         channels.append(Channel(
             name=ch["name"],
-            observable=Observable(**ch["observable"]),
+            observable=Observable(**obs),
             data=ChannelData(**ch["data"]),
             processes=procs,
             bin_integration=ch.get("bin_integration", "center"),
             obs_ref=_ref_from_dict(ch.get("obs_ref")),
+            mcstats=_mcstats_from_dict(ch.get("mcstats")),
         ))
     params = {}
     for name, p in d["parameters"].items():

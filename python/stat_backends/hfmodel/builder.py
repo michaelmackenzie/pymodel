@@ -20,6 +20,23 @@ Mapping (Combine semantics on the left, pyhf on the right):
                                                   + normsys (kd**s, ku**s), code1
 * Gaussian constraints N(0, 1)                 -> pyhf normal constraints of normsys/histosys
 * Poisson constraint of gmN                    -> pyhf Poisson constraint of shapesys (aux = N)
+* autoMCStats channels                         -> templates as above (their rate is the template
+                                                  integral, so the histosys is CMSHistFunc's
+                                                  hist-mode 1 morph); the CMSHistFunc floor and the
+                                                  Barlow-Beeston-lite terms are applied in numpy after
+                                                  pyhf's evaluation (likelihood.py): pyhf has no
+                                                  additive per-bin modifier with Combine's width
+                                                  sqrt(sum_p (C_p(theta) e_p)^2)
+* multi-dimensional channels                    -> one pyhf channel over the flattened (row-major)
+                                                  bins: the binned Poisson likelihood only sees the
+                                                  bins, so this is exact
+* ``shape`` on a fixed RooHistPdf              -> histosys like a template (TH1F-rounded unit
+                                                  histograms, no normsys: Combine's
+                                                  FastVerticalInterpHistPdf2 has no normalisation
+                                                  effect); the density crop at 1e-9 and the
+                                                  renormalisation are applied after pyhf (likelihood.py).
+                                                  ``shape`` on other pdfs (VerticalInterpPdf morphs
+                                                  un-normalised pdf values) is refused
 """
 
 import math
@@ -56,6 +73,8 @@ class HFSpec:
     parameters: List[dict]                  # pyhf measurement config "parameters"
     links: Dict[str, ParamLink]
     template_samples: List[Tuple[str, str]] = field(default_factory=list)  # (channel, process) with renorm
+    mcstats_samples: List[Tuple[str, str]] = field(default_factory=list)   # (channel, process) in autoMCStats channels
+    histpdf_samples: List[Tuple[str, str]] = field(default_factory=list)   # (channel, process): morphed RooHistPdfs
     notes: List[str] = field(default_factory=list)
 
     @property
@@ -85,6 +104,8 @@ class _Builder:
         self.links: Dict[str, ParamLink] = {}
         self.notes: List[str] = []
         self.template_samples: List[Tuple[str, str]] = []
+        self.mcstats_samples: List[Tuple[str, str]] = []
+        self.histpdf_samples: List[Tuple[str, str]] = []
         self.gmn_users: Dict[str, List[Tuple[str, str]]] = {}
         self.asym_lnn = False
         self.inexact_morph: List[str] = []
@@ -111,7 +132,7 @@ class _Builder:
 
     # ----- samples ---------------------------------------------------------------------
     def sample(self, ch: I.Channel, proc: I.Process) -> dict:
-        nbins = len(ch.observable.edges) - 1
+        nbins = ch.observable.nbins  # N-D channels: the flattened bins (ir.Observable)
         shape = proc.shape
         mods: List[dict] = []
         normsys: Dict[str, List[float]] = {}  # name -> [hi, lo]; several factors of one name multiply (code1 exact)
@@ -157,7 +178,10 @@ class _Builder:
             else:
                 nom_n = nom / nom_int
                 data = rate * nom_n
-                self.template_samples.append((ch.name, proc.name))
+                if ch.mcstats is not None:
+                    self.mcstats_samples.append((ch.name, proc.name))
+                else:
+                    self.template_samples.append((ch.name, proc.name))
                 scales = [s.scale for s in shape.systs]
                 vsmooth = min([1.0] + scales)
                 for syst in shape.systs:
@@ -178,6 +202,34 @@ class _Builder:
                     if kappas is not None:
                         add_normsys(syst.param, kappas[1], kappas[0])
                         self.asym_lnn |= abs(kappas[0] * kappas[1] - 1.0) > 1e-12
+        elif shape.kind == "parametric" and shape.pdf_systs:
+            if shape.pdf_morph != I.PDF_MORPH_HIST or not shape.contents:
+                raise UnsupportedByBackend(
+                    f"hfmodel: shape systematics on the pdf {ch.name}/{proc.name} are supported only for fixed "
+                    "RooHistPdfs (Combine's VerticalInterpPdf morphs un-normalised pdf values, which pyhf cannot "
+                    "express)")
+
+            def unit(a):  # Combine samples the RooHistPdfs into TH1F (semantics.hist_pdf_fractions)
+                a = np.asarray(a, dtype=np.float32).astype(float)
+                return a / a.sum()
+
+            nom_n = unit(shape.contents)
+            data = rate * nom_n
+            self.histpdf_samples.append((ch.name, proc.name))
+            vsmooth = min([1.0] + [s.scale for s in shape.pdf_systs])
+            for syst in shape.pdf_systs:
+                if syst.kind != "shape":
+                    raise UnsupportedByBackend(f"hfmodel: '{syst.kind}' on the RooHistPdf {ch.name}/{proc.name} is "
+                                               "not supported")
+                s = syst.scale
+                hi = rate * (nom_n + s * (unit(syst.up_contents) - nom_n))
+                lo = rate * (nom_n + s * (unit(syst.down_contents) - nom_n))
+                mods.append({"name": syst.param, "type": "histosys",
+                             "data": {"hi_data": hi.tolist(), "lo_data": lo.tolist()}})
+                self.link(syst.param, "histosys")
+                if abs(s - vsmooth) > 1e-12:
+                    self.inexact_morph.append(f"{ch.name}/{proc.name}:{syst.param} (scale {s:g}, "
+                                              f"Combine smooth region {vsmooth:g})")
         elif shape.kind == "parametric" and shape.contents and not shape.params:
             data = rate * np.asarray(shape.contents, dtype=float)
         else:
@@ -261,13 +313,25 @@ class _Builder:
             self.notes.append("vertical morphing uses pyhf histosys code4p (Combine's smoothStep with the smooth "
                               "region |theta| < scale); Combine uses |scale*theta| < min(1, scales of the process), "
                               "so these differ for |theta| < 1 and |theta| < scale: " + "; ".join(self.inexact_morph))
+        bb = {bp.param for ch in self.model.channels if ch.mcstats is not None for bp in ch.mcstats.params}
         unused = [p.name for p in self.model.parameters.values()
-                  if p.name not in self.links and p.constraint is not None and p.role != I.ROLE_CONSTANT]
+                  if p.name not in self.links and p.name not in bb and p.constraint is not None
+                  and p.role != I.ROLE_CONSTANT]
         if unused:
             self.notes.append(f"constrained parameters without any pyhf modifier ({', '.join(unused)}) are "
                               "constrained by the shared layer only; they are absent from the exported workspace")
+        if self.histpdf_samples:
+            self.notes.append("morphed RooHistPdf bins are cropped at a density of 1e-9 and renormalised as in "
+                              "Combine (FastVerticalInterpHistPdf2) after the pyhf evaluation; the exported pyhf "
+                              "workspace does not do this")
+        if self.mcstats_samples:
+            self.notes.append("autoMCStats: CMSHistFunc's per-bin floor (1e-9, no renormalisation) and the "
+                              "Barlow-Beeston-lite bin parameters are applied exactly in numpy after pyhf's "
+                              "evaluation; the pyhf model itself has no modifier for them (export is refused)")
         return HFSpec(channels=channels, observations=observations, parameters=parameters, links=self.links,
-                      template_samples=self.template_samples, notes=self.notes)
+                      template_samples=self.template_samples, mcstats_samples=self.mcstats_samples,
+                      histpdf_samples=self.histpdf_samples,
+                      notes=self.notes)
 
 
 def build_spec(model: I.ModelIR) -> HFSpec:

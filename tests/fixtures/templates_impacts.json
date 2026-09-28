@@ -1,0 +1,125 @@
+{
+ "fixture": "templates_impacts",
+ "card": "examples/templates/card.txt",
+ "combine": {
+  "executable": "/exp/mu2e/app/users/mmackenz/mumep/combine/HiggsAnalysis/CombinedLimit/build/bin/combine",
+  "source": "/exp/mu2e/app/users/mmackenz/mumep/combine/HiggsAnalysis/CombinedLimit",
+  "commit": "137dbced2ab8901869d02c0b7773139d28cf8bfd",
+  "describe": "137dbced",
+  "branch": "mu2e_dev",
+  "root": "6.32.02"
+ },
+ "generated": "2026-09-27T21:45:30.037898",
+ "seed": 20260927,
+ "measure": "impacts",
+ "r_range": [
+  0.0,
+  20.0
+ ],
+ "impacts": {
+  "POIs": [
+   {
+    "fit": [
+     0.3226567804813385,
+     0.9050389528274536,
+     1.5448009967803955
+    ],
+    "name": "r"
+   }
+  ],
+  "method": "default",
+  "params": [
+   {
+    "fit": [
+     -0.9380808472633362,
+     -0.1191384494304657,
+     0.6966590285301208
+    ],
+    "groups": [],
+    "impact_r": 0.12156260013580322,
+    "name": "bkg_norm",
+    "prefit": [
+     -1.0,
+     0.0,
+     1.0
+    ],
+    "r": [
+     1.0244275331497192,
+     0.9051957130432129,
+     0.7836331129074097
+    ],
+    "type": "Gaussian"
+   },
+   {
+    "fit": [
+     -0.6147084832191467,
+     -0.07589290291070938,
+     0.4261840879917145
+    ],
+    "groups": [],
+    "impact_r": 0.20476645231246948,
+    "name": "bkg_shape",
+    "prefit": [
+     -1.0,
+     0.0,
+     1.0
+    ],
+    "r": [
+     1.109816551208496,
+     0.9050500988960266,
+     0.7027199864387512
+    ],
+    "type": "Gaussian"
+   },
+   {
+    "fit": [
+     -1.0128657817840576,
+     -0.05963890254497528,
+     0.8918314576148987
+    ],
+    "groups": [],
+    "impact_r": 0.07684451341629028,
+    "name": "lumi",
+    "prefit": [
+     -1.0,
+     0.0,
+     1.0
+    ],
+    "r": [
+     0.981986403465271,
+     0.9051418900489807,
+     0.8313599824905396
+    ],
+    "type": "Gaussian"
+   },
+   {
+    "fit": [
+     -1.0485783815383911,
+     -0.09809160232543945,
+     0.8520549535751343
+    ],
+    "groups": [],
+    "impact_r": 0.05880850553512573,
+    "name": "sig_width",
+    "prefit": [
+     -1.0,
+     0.0,
+     1.0
+    ],
+    "r": [
+     0.8463432192802429,
+     0.9051517248153687,
+     0.919468879699707
+    ],
+    "type": "Gaussian"
+   }
+  ]
+ },
+ "commands": {
+  "text2workspace": "text2workspace.py card.txt -m 120 -o ws.root",
+  "impacts_initial": "combineTool.py -M Impacts -d ws.root -m 120 --robustFit 1 --cminDefaultMinimizerTolerance 0.001 --rMin 0 --rMax 20 --parallel 8 --doInitialFit",
+  "impacts_fits": "combineTool.py -M Impacts -d ws.root -m 120 --robustFit 1 --cminDefaultMinimizerTolerance 0.001 --rMin 0 --rMax 20 --parallel 8 --doFits",
+  "impacts_collect": "combineTool.py -M Impacts -d ws.root -m 120 --robustFit 1 --cminDefaultMinimizerTolerance 0.001 --rMin 0 --rMax 20 --parallel 8 -o impacts.json"
+ },
+ "cpu_seconds_wall": 31.0
+}

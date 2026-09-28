@@ -62,13 +62,19 @@ class RooLikelihood(Likelihood):
         self._last = np.full(len(self.names), np.nan)
         vec_d = self.ROOT.std.vector("double")
         vec_f = self.ROOT.std.vector("RooAbsReal*")
+        vec_o = self.ROOT.std.vector("RooRealVar*")
+        vec_dd = self.ROOT.std.vector(vec_d)
         self._cpp = {}
         self._chan = {c.name: c for c in self.mw.channels}
         floating = {p.name for p in model.parameters.values() if p.floating}
         static_deps = set()
         self._envelopes = []   # (param index of the category, corrections, [deps per state])
         for cb in self.mw.channels:
-            ch = C.Channel(cb.obs, vec_d(cb.edges.tolist()))
+            obs, edges = vec_o(), vec_dd()
+            for v, e in zip(cb.obs_list, cb.axis_edges):
+                obs.push_back(v)
+                edges.push_back(vec_d(e.tolist()))
+            ch = C.Channel(obs, edges)
             for pb in cb.procs:
                 ip = ch.add_proc(pb.yield_func, pb.category if pb.category else self.ROOT.nullptr)
                 for st in pb.states:
@@ -85,6 +91,11 @@ class RooLikelihood(Likelihood):
                 else:
                     for st in pb.states:
                         static_deps |= st.deps
+            for ip, j, f in cb.bb_terms:
+                ch.add_bin_term(ip, j, f)
+                static_deps |= self.mw.ir_deps(f)
+            if cb.floor is not None:
+                ch.set_floor(cb.floor)
             self._cpp[cb.name] = ch
         self._static_deps = static_deps & floating
         if self._envelopes:
@@ -114,11 +125,15 @@ class RooLikelihood(Likelihood):
         out = {}
         for ch in self.model.channels:
             md = data.main[ch.name]
-            nb = len(ch.observable.edges) - 1
+            nb = ch.observable.nbins
             if ch.data.kind == "unbinned":
                 if md.kind != "unbinned":
                     raise ValueError(f"roomodel: channel {ch.name} is unbinned but the dataset has {md.kind} data")
                 vals = np.ascontiguousarray(md.values, dtype=float)
+                nd = ch.observable.ndim
+                if (nd == 1 and vals.ndim != 1) or (nd > 1 and (vals.ndim != 2 or vals.shape[1] != nd)):
+                    raise ValueError(f"roomodel: channel {ch.name} has a {nd}-dimensional observable, the dataset "
+                                     f"values have shape {vals.shape}")
                 w = None if md.weights is None else np.ascontiguousarray(md.weights, dtype=float)
                 if w is not None and len(w) != len(vals):
                     raise ValueError(f"roomodel: channel {ch.name}: {len(vals)} values but {len(w)} weights")
@@ -133,25 +148,35 @@ class RooLikelihood(Likelihood):
         return RooData(channels=out, lik=self)
 
     def to_roofit_data(self, channel: str, d: ChannelData):
-        """RooDataHist (binned) or RooDataSet (unbinned, weighted if weights) of one channel."""
+        """RooDataHist (binned, entries at the bin centres) or RooDataSet (unbinned, weighted if
+        weights) of one channel, over all observable axes."""
         R_ = self.ROOT
         cb = self._chan[channel]
-        obs = cb.obs
-        old = obs.getVal()
+        variables = cb.obs_list
+        obs = R_.RooArgSet()
+        for v in variables:
+            obs.add(v)
+        old = [v.getVal() for v in variables]
         if d.kind == "binned":
-            dh = R_.RooDataHist(f"data_{channel}", "", R_.RooArgSet(obs))
-            for i, n in enumerate(d.counts):
-                obs.setVal(0.5 * (cb.edges[i] + cb.edges[i + 1]))
-                dh.set(R_.RooArgSet(obs), float(n))
-            obs.setVal(old)
+            dh = R_.RooDataHist(f"data_{channel}", "", obs)
+            for c, n in zip(cb.geometry.bin_centers(), d.counts):
+                for v, x in zip(variables, c):
+                    v.setVal(float(x))
+                dh.set(obs, float(n))
+            for v, x in zip(variables, old):
+                v.setVal(x)
             return dh
         wvar = R_.RooRealVar("weight", "weight", 1.0)
-        args = R_.RooArgSet(obs, wvar)
+        args = R_.RooArgSet(obs)
+        args.add(wvar)
         ds = R_.RooDataSet(f"data_{channel}", "", args, R_.RooFit.WeightVar(wvar))
-        for j, x in enumerate(d.values):
-            obs.setVal(float(x))
-            ds.add(R_.RooArgSet(obs), 1.0 if d.weights is None else float(d.weights[j]))
-        obs.setVal(old)
+        points = np.asarray(d.values, dtype=float).reshape(len(d.values), -1)
+        for j, x in enumerate(points):
+            for v, xv in zip(variables, x):
+                v.setVal(float(xv))
+            ds.add(obs, 1.0 if d.weights is None else float(d.weights[j]))
+        for v, x in zip(variables, old):
+            v.setVal(x)
         return ds
 
     # ----- likelihood ----------------------------------------------------------------------
@@ -164,7 +189,8 @@ class RooLikelihood(Likelihood):
                 total += ch.binned_nll(d.counts)
             else:
                 w = d.weights if d.weights is not None else self.ROOT.nullptr
-                total += ch.unbinned_nll(d.values, w, len(d.values))
+                x = d.values if d.values.ndim == 1 else d.values.reshape(-1)  # N-D: rows of ndim values
+                total += ch.unbinned_nll(x, w, len(d.values))
             if not math.isfinite(total):
                 return math.inf
         return total
@@ -176,7 +202,7 @@ class RooLikelihood(Likelihood):
             ch = self._cpp[cb.name]
             procs = {}
             for ip, pb in enumerate(cb.procs):
-                arr = np.empty(len(cb.edges) - 1)
+                arr = np.empty(cb.geometry.nbins)
                 ch.expected(ip, arr)
                 procs[pb.name] = arr
             out[cb.name] = procs
@@ -185,14 +211,16 @@ class RooLikelihood(Likelihood):
     def sample_unbinned(self, values, channel, n, rng):
         """n events of an unbinned channel: process counts from a multinomial with the
         yields (numpy rng), then each pdf generated by RooFit (RooRandom seeded from rng);
-        template processes are drawn bin-wise and uniformly inside the bin."""
+        template processes are drawn bin-wise and uniformly inside the bin.  N-D channels:
+        the pdfs are generated over all axes and the result has shape (n, ndim)."""
         R_ = self.ROOT
         self.set_values(values)
         cb = self._chan[channel]
         ch = self._cpp[channel]
         ylds = np.array([ch.proc_yield(ip) for ip in range(len(cb.procs))])
+        nd = cb.geometry.ndim
         if n == 0:
-            return np.zeros(0)
+            return np.zeros(0) if nd == 1 else np.zeros((0, nd))
         if np.any(ylds < 0) or ylds.sum() <= 0:
             raise ValueError(f"roomodel: cannot sample channel {channel} with yields {ylds}")
         counts = rng.multinomial(n, ylds / ylds.sum())
@@ -203,13 +231,21 @@ class RooLikelihood(Likelihood):
             state = pb.states[pb.category.getCurrentIndex() if pb.category is not None else 0]
             if state.pdf is not None:
                 R_.RooRandom.randomGenerator().SetSeed(int(rng.integers(1, 2 ** 31 - 1)))
-                ds = state.pdf.generate(R_.RooArgSet(cb.obs), int(k))
-                parts.append(np.asarray(ds.to_numpy()[cb.obs.GetName()], dtype=float))
+                gen = R_.RooArgSet()
+                for v in cb.obs_list:
+                    gen.add(v)
+                # AutoBinned(False): for binned pdfs (RooHistPdf) RooFit would otherwise return a
+                # weighted dataset at the bin centres, whose weights to_numpy() does not carry
+                cols = state.pdf.generate(gen, int(k), R_.RooFit.AutoBinned(False)).to_numpy()
+                pts = np.column_stack([np.asarray(cols[v.GetName()], dtype=float) for v in cb.obs_list])
             else:
-                frac = np.empty(len(cb.edges) - 1)
+                frac = np.empty(cb.geometry.nbins)
                 ch.fractions(ip, frac)
                 b = rng.choice(len(frac), size=int(k), p=frac / frac.sum())
-                parts.append(cb.edges[b] + rng.random(int(k)) * (cb.edges[b + 1] - cb.edges[b]))
+                idx = np.unravel_index(b, cb.geometry.shape)
+                pts = np.column_stack([e[i] + rng.random(int(k)) * (e[i + 1] - e[i])
+                                       for e, i in zip(cb.axis_edges, idx)])
+            parts.append(pts[:, 0] if nd == 1 else pts)
         return rng.permutation(np.concatenate(parts))
 
     # ----- envelopes ------------------------------------------------------------------------
